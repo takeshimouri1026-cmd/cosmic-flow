@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #2a2456 0%, transparent 60%),
+    radial-gradient(800px 800px at 100% 100%, #1a3a4a 0%, transparent 55%),
+    #0b0a1a;
+  background-attachment: fixed;
+}
+.font-serif {
+  font-family: "Hiragino Mincho ProN", "Yu Mincho", Georgia, serif;
+}
