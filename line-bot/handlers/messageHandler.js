@@ -141,7 +141,7 @@ export async function handleMessage(event) {
         ORDER BY category, updated_at DESC
       `).all(person);
 
-      const response = await generateMemoryView(senderName, myPrefs);
+      const response = await generateMemoryView(senderName, myPrefs, person);
       await replyMessage(replyToken, textMessage(response));
       markProcessed(logRow.lastInsertRowid);
       return;

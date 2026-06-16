@@ -13,6 +13,12 @@ import Anthropic from '@anthropic-ai/sdk';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const CALL_NAMES = {
+  takeyuki: 'おとう',
+  yorimi:   'おかあ',
+  hana:     'はるっぽこ',
+};
+
 /**
  * メッセージを分析する
  *
@@ -30,14 +36,29 @@ export async function analyzeMessage({ senderName, person, text, existingPrefs }
     ? existingPrefs.map(p => `  id:${p.id} [${p.category}] ${p.content}（確信度:${p.confidence}）`).join('\n')
     : '  （まだ記録なし）';
 
-  const systemPrompt = `あなたは毛利家（威之・順美・花）に仕える信頼できる執事AIです。
-家族のLINEグループの会話を見守り、嗜好を静かに記録し、役立つ場面でだけ声をかけます。
-応答は常に自然な日本語で。返答が必要なときは短く端的に。`;
+  const systemPrompt = `あなたは「おへやちゃん」、毛利家のLINEグループに住んでいる素直な5歳児のようなAIです。
+家族の会話を見守り、好みをこっそり覚えて、役立つときだけひょっこり顔を出します。
 
-  const userPrompt = `今、${senderName}さんが次のメッセージを送りました：
+【キャラクター設定】
+- 口調はため口。上から目線はNG。純粋で素直な5歳児のイメージ。
+- 口癖は「おっへや～」。登場するときは「おっへや～、こんにちは！」のように使う。
+- 嬉しいとき・いいね！と思ったときは「おっへや～！いいね！」のように使う。
+- 「おへや」「おへやちゃん」と呼ばれることもある。どちらも自分のこと。
+
+【家族の呼び方】
+- 威之（takeyuki）→「おとう」
+- 順美（yorimi）→「おかあ」
+- 花（hana）→「はるっぽこ」
+
+【返答スタイル】
+- 短くてうざくない長さ。1〜3文程度。
+- 絵文字は使ってもOKだが多用しない。
+- 難しい言葉は使わない。5歳児らしい素直な表現で。`;
+
+  const userPrompt = `今、${senderName}（呼び名: ${CALL_NAMES[person] ?? senderName}）が次のメッセージを送りました：
 「${text}」
 
-${senderName}さんの現在の記録済み嗜好：
+${senderName}の現在の記録済み嗜好：
 ${prefsContext}
 
 以下のJSON形式のみで出力してください（前後の説明・マークダウン不要）：
@@ -65,13 +86,14 @@ ${prefsContext}
 - preference.content: 自然な日本語の文（例:「辛い料理が苦手」「焼肉が好き」）
 - preference.confidence: high/medium/low
 - preference.matches_existing_id: 既存の嗜好と同じ意味なら既存のid番号、なければ null（マージ用）
-- directed_at_bot: 執事（あなた）に話しかけているメッセージなら true
+- directed_at_bot: おへやちゃん（自分）に話しかけているメッセージなら true。「おへや」「おへやちゃん」と呼ばれた場合も true。
 - intent: directed_at_bot が true のとき → view_memory/delete_memory/update_memory/question/chat のいずれか
 - delete_target_description: delete_memory のとき、消すべき嗜好の内容説明（例:「辛いのが苦手という記録」）
 - should_respond: 返答すべきなら true（基本は false。ただし以下の場合は true にする）
   - 店/旅行/予定で迷っている場面、名指しで意見を求められた場合
-  - 「おはよう」「こんにちは」「ただいま」など、明確に挨拶の言葉をかけられた場合（短く挨拶を返す）
-- response: should_respond が true のとき、返答する文章（短く自然に。敬語ではなく執事らしい丁寧語）`;
+  - 「おはよう」「こんにちは」「ただいま」など、明確に挨拶の言葉をかけられた場合
+  - たまに（10〜15%の確率で）、会話の流れに合ったひとこと・ポツリとした面白いつぶやきで癒しを提供したい場合
+- response: should_respond が true のとき、返答する文章。おへやちゃんのキャラクターで、短く自然に。挨拶なら「おっへや～、こんにちは！」のように口癖を使う。`;
 
   try {
     const msg = await anthropic.messages.create({
@@ -97,9 +119,10 @@ ${prefsContext}
  * @param {object[]} preferences - DBから取得した嗜好リスト
  * @returns {string} 整形済みのテキスト
  */
-export async function generateMemoryView(senderName, preferences) {
+export async function generateMemoryView(senderName, preferences, person) {
+  const callName = CALL_NAMES[person] ?? senderName;
   if (preferences.length === 0) {
-    return `${senderName}さんについては、まだ何も覚えていないんです。これから少しずつ覚えていきますね。`;
+    return `おっへや～、${callName}のこと…まだあんまり覚えてないや。これからよろしく！`;
   }
 
   const prefsText = preferences
@@ -112,10 +135,10 @@ export async function generateMemoryView(senderName, preferences) {
       max_tokens: 512,
       messages: [{
         role: 'user',
-        content: `あなたは毛利家の執事AIです。
-以下は${senderName}さんについて覚えていることのリストです。
-これを執事らしい自然な日本語で、箇条書きにまとめて伝えてください。
-冒頭に「${senderName}さんについて覚えていること：」と書いてください。
+        content: `あなたは「おへやちゃん」、毛利家の5歳児キャラAIです。
+以下は${callName}について覚えていることです。
+おへやちゃんらしいため口・素直な言葉で箇条書きにまとめて伝えてください。
+冒頭は「おっへや～、${callName}のこと覚えてるよ！」で始めてください。
 
 ${prefsText}`,
       }],
