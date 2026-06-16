@@ -43,6 +43,32 @@ export async function replyMessage(replyToken, messages) {
 }
 
 /**
+ * Push APIでグループ/ユーザーにメッセージを送る（replyToken不要）
+ * カレンダー処理など時間がかかる処理の結果送信に使う
+ * @param {string} to - 送信先のグループIDまたはユーザーID
+ * @param {object|object[]} messages
+ */
+export async function pushMessage(to, messages) {
+  const body = {
+    to,
+    messages: Array.isArray(messages) ? messages : [messages],
+  };
+
+  const res = await fetch('https://api.line.me/v2/bot/message/push', {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`LINE Push APIエラー: ${res.status} ${errText}`);
+  }
+
+  console.log('[LINE] Push送信OK');
+}
+
+/**
  * テキストメッセージオブジェクトを作るヘルパー
  * @param {string} text - 送るテキスト
  */

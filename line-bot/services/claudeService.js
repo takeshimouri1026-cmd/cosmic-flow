@@ -189,12 +189,10 @@ export async function generateScheduleMessage(events, weekStart) {
     const dayLabel = `${date.getMonth() + 1}/${date.getDate()}(${DAY_NAMES_JP[date.getDay()]})`;
     if (events.length === 0) return `${dayLabel}: 予定なし`;
     const evList = events.map(ev => {
-      const start = ev.start.dateTime
-        ? new Date(ev.start.dateTime).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
-        : '終日';
-      const end = ev.end.dateTime
-        ? new Date(ev.end.dateTime).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
-        : '';
+      const toJstTime = iso => new Date(new Date(iso).getTime() + 9*60*60*1000)
+        .toISOString().substring(11, 16);
+      const start = ev.start.dateTime ? toJstTime(ev.start.dateTime) : '終日';
+      const end   = ev.end.dateTime   ? toJstTime(ev.end.dateTime)   : '';
       const loc = ev.location ? `（場所: ${ev.location}）` : '';
       return `  - ${start}${end ? '〜' + end : ''} ${ev.summary ?? ''}${loc}`;
     }).join('\n');

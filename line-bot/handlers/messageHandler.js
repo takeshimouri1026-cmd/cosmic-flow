@@ -15,7 +15,7 @@ import db from '../db/index.js';
 import { analyzeMessage, generateMemoryView, generateSearchResponse, generateScheduleMessage } from '../services/claudeService.js';
 import { search } from '../services/searchService.js';
 import { getNextWeekEvents } from '../services/calendarService.js';
-import { replyMessage, textMessage } from '../services/lineClient.js';
+import { replyMessage, pushMessage, textMessage } from '../services/lineClient.js';
 
 // ============================================================
 // 家族の設定
@@ -167,14 +167,20 @@ export async function handleMessage(event) {
 
     // カレンダー共有
     if (analysis.intent === 'share_schedule') {
-      try {
-        const { events, weekStart } = await getNextWeekEvents();
-        const response = await generateScheduleMessage(events, weekStart);
-        await replyMessage(replyToken, textMessage(response));
-      } catch (err) {
-        console.error('[Handler] カレンダーエラー:', err.message);
-        await replyMessage(replyToken, textMessage(`おっへや～、カレンダーがうまく読めなかったよ～ごめんね！`));
-      }
+      // replyTokenは30秒で切れるので先に即返信し、結果はPush APIで送る
+      const sendTo = groupId ?? userId;
+      await replyMessage(replyToken, textMessage(`おっへや～！カレンダー見てくるね、ちょっと待って！`));
+      // 非同期で処理（awaitしない）
+      (async () => {
+        try {
+          const { events, weekStart } = await getNextWeekEvents();
+          const response = await generateScheduleMessage(events, weekStart);
+          await pushMessage(sendTo, textMessage(response));
+        } catch (err) {
+          console.error('[Handler] カレンダーエラー:', err.message);
+          await pushMessage(sendTo, textMessage(`おっへや～、カレンダーがうまく読めなかったよ～ごめんね！`));
+        }
+      })();
       markProcessed(logRow.lastInsertRowid);
       return;
     }
