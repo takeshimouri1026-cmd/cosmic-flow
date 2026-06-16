@@ -89,7 +89,8 @@ ${prefsContext}
 - preference.confidence: high/medium/low
 - preference.matches_existing_id: 既存の嗜好と同じ意味なら既存のid番号、なければ null（マージ用）
 - directed_at_bot: おへやちゃん（自分）に話しかけているメッセージなら true。「おへや」「おへやちゃん」と呼ばれた場合も true。
-- intent: directed_at_bot が true のとき → view_memory/delete_memory/update_memory/question/chat のいずれか
+- intent: directed_at_bot が true のとき → view_memory/delete_memory/update_memory/share_schedule/question/chat のいずれか
+  ※「来週の予定を共有して」「スケジュール教えて」「仕事の予定をLINEに共有」などは share_schedule
 - delete_target_description: delete_memory のとき、消すべき嗜好の内容説明（例:「辛いのが苦手という記録」）
 - should_search: ウェブ検索が必要なら true。以下の場合に true にする：
   - 「調べて」「教えて」「どこ？」「いつ？」「何時？」「おすすめは？」など情報を求めている場合
@@ -156,6 +157,76 @@ ${prefsText}`,
     console.error('[Claude] generateMemoryView エラー:', err.message);
     // フォールバック：整形なしで返す
     return `${senderName}さんについて覚えていること：\n${preferences.map(p => `• ${p.content}`).join('\n')}`;
+  }
+}
+
+const DAY_NAMES_JP = ['日', '月', '火', '水', '木', '金', '土'];
+
+/**
+ * カレンダーの予定から来週の家族向け共有メッセージを生成する
+ *
+ * @param {object[]} events  - Google Calendar APIのイベント一覧
+ * @param {Date} weekStart   - 来週の月曜日
+ * @returns {string} おへやちゃんのメッセージ
+ */
+export async function generateScheduleMessage(events, weekStart) {
+  // 日付ごとにイベントをグループ化
+  const byDay = {};
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    const key = d.toISOString().split('T')[0];
+    byDay[key] = { date: d, events: [] };
+  }
+
+  for (const ev of events) {
+    const dateStr = (ev.start.dateTime ?? ev.start.date ?? '').substring(0, 10);
+    if (byDay[dateStr]) byDay[dateStr].events.push(ev);
+  }
+
+  // Claudeに渡すテキストを構成
+  const eventsText = Object.values(byDay).map(({ date, events }) => {
+    const dayLabel = `${date.getMonth() + 1}/${date.getDate()}(${DAY_NAMES_JP[date.getDay()]})`;
+    if (events.length === 0) return `${dayLabel}: 予定なし`;
+    const evList = events.map(ev => {
+      const start = ev.start.dateTime
+        ? new Date(ev.start.dateTime).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+        : '終日';
+      const end = ev.end.dateTime
+        ? new Date(ev.end.dateTime).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+        : '';
+      const loc = ev.location ? `（場所: ${ev.location}）` : '';
+      return `  - ${start}${end ? '〜' + end : ''} ${ev.summary ?? ''}${loc}`;
+    }).join('\n');
+    return `${dayLabel}:\n${evList}`;
+  }).join('\n\n');
+
+  try {
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 800,
+      system: `あなたは「おへやちゃん」、毛利家の5歳児キャラAIです。
+口癖は「おっへや～」。ため口で素直に話す。`,
+      messages: [{
+        role: 'user',
+        content: `以下はおとう（威之）の来週のGoogleカレンダーの予定です。
+
+${eventsText}
+
+これを毛利家LINEグループ向けに整理して伝えてください。
+以下のルールで：
+- 冒頭は「おっへや～！来週のおとうの予定だよ～！」
+- 曜日ごとに：研修・仕事の内容と場所（わかれば）、夕飯を家で食べそうかどうか
+- 夕飯の判断基準：夜19時以降に外での予定がある or 場所が遠い → 「夕飯は外かも」、そうでなければ「夕飯は一緒に食べられそう」
+- 予定がない日は「お休み」
+- 短くわかりやすく。箇条書きOK。`,
+      }],
+    });
+
+    return msg.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  } catch (err) {
+    console.error('[Claude] generateScheduleMessage エラー:', err.message);
+    return `おっへや～、予定の整理がうまくできなかったよ～ごめんね！`;
   }
 }
 

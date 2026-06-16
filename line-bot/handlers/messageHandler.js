@@ -12,8 +12,9 @@
  */
 
 import db from '../db/index.js';
-import { analyzeMessage, generateMemoryView, generateSearchResponse } from '../services/claudeService.js';
+import { analyzeMessage, generateMemoryView, generateSearchResponse, generateScheduleMessage } from '../services/claudeService.js';
 import { search } from '../services/searchService.js';
+import { getNextWeekEvents } from '../services/calendarService.js';
 import { replyMessage, textMessage } from '../services/lineClient.js';
 
 // ============================================================
@@ -159,6 +160,20 @@ export async function handleMessage(event) {
         await replyMessage(replyToken, textMessage(
           `該当する記憶が見つかりませんでした。\n何を忘れればよいか、もう少し詳しく教えていただけますか？`
         ));
+      }
+      markProcessed(logRow.lastInsertRowid);
+      return;
+    }
+
+    // カレンダー共有
+    if (analysis.intent === 'share_schedule') {
+      try {
+        const { events, weekStart } = await getNextWeekEvents();
+        const response = await generateScheduleMessage(events, weekStart);
+        await replyMessage(replyToken, textMessage(response));
+      } catch (err) {
+        console.error('[Handler] カレンダーエラー:', err.message);
+        await replyMessage(replyToken, textMessage(`おっへや～、カレンダーがうまく読めなかったよ～ごめんね！`));
       }
       markProcessed(logRow.lastInsertRowid);
       return;
