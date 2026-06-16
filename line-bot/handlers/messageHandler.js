@@ -12,7 +12,8 @@
  */
 
 import db from '../db/index.js';
-import { analyzeMessage, generateMemoryView } from '../services/claudeService.js';
+import { analyzeMessage, generateMemoryView, generateSearchResponse } from '../services/claudeService.js';
+import { search } from '../services/searchService.js';
 import { replyMessage, textMessage } from '../services/lineClient.js';
 
 // ============================================================
@@ -174,7 +175,22 @@ export async function handleMessage(event) {
     }
   }
 
-  // --- ⑥ 通常の返答（必要な場面のみ） ---
+  // --- ⑥ 検索が必要な場合 ---
+  if (analysis.should_search && analysis.search_query) {
+    console.log(`[Handler] 🔍 検索: "${analysis.search_query}"`);
+    try {
+      const searchResult = await search(analysis.search_query);
+      const response = await generateSearchResponse(text, searchResult, senderName, person);
+      await replyMessage(replyToken, textMessage(response));
+    } catch (err) {
+      console.error('[Handler] 検索エラー:', err.message);
+      await replyMessage(replyToken, textMessage(`おっへや～、うまく調べられなかったよ～ごめんね！`));
+    }
+    markProcessed(logRow.lastInsertRowid);
+    return;
+  }
+
+  // --- ⑦ 通常の返答（必要な場面のみ） ---
   if (analysis.should_respond && analysis.response) {
     await replyMessage(replyToken, textMessage(analysis.response));
   }

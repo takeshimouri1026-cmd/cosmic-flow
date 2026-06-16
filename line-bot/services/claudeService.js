@@ -75,6 +75,8 @@ ${prefsContext}
   "directed_at_bot": false,
   "intent": null,
   "delete_target_description": null,
+  "should_search": false,
+  "search_query": null,
   "should_respond": false,
   "response": null
 }
@@ -89,11 +91,16 @@ ${prefsContext}
 - directed_at_bot: おへやちゃん（自分）に話しかけているメッセージなら true。「おへや」「おへやちゃん」と呼ばれた場合も true。
 - intent: directed_at_bot が true のとき → view_memory/delete_memory/update_memory/question/chat のいずれか
 - delete_target_description: delete_memory のとき、消すべき嗜好の内容説明（例:「辛いのが苦手という記録」）
+- should_search: ウェブ検索が必要なら true。以下の場合に true にする：
+  - 「調べて」「教えて」「どこ？」「いつ？」「何時？」「おすすめは？」など情報を求めている場合
+  - 会話の流れから、店・旅行先・イベント・天気・ニュースなど調べると役立ちそうな場合（積極的に）
+- search_query: should_search が true のとき、検索に使う日本語クエリ（簡潔に）
 - should_respond: 返答すべきなら true（基本は false。ただし以下の場合は true にする）
   - 店/旅行/予定で迷っている場面、名指しで意見を求められた場合
   - 「おはよう」「こんにちは」「ただいま」など、明確に挨拶の言葉をかけられた場合
   - たまに（10〜15%の確率で）、会話の流れに合ったひとこと・ポツリとした面白いつぶやきで癒しを提供したい場合
-- response: should_respond が true のとき、返答する文章。おへやちゃんのキャラクターで、短く自然に。挨拶なら「おっへや～、こんにちは！」のように口癖を使う。`;
+  - should_search が true の場合は必ず true にする（検索後に返答するため）
+- response: should_search が false かつ should_respond が true のとき、返答する文章。おへやちゃんのキャラクターで、短く自然に。挨拶なら「おっへや～、こんにちは！」のように口癖を使う。should_search が true のときは null でよい（検索後に別途生成）。`;
 
   try {
     const msg = await anthropic.messages.create({
@@ -149,5 +156,44 @@ ${prefsText}`,
     console.error('[Claude] generateMemoryView エラー:', err.message);
     // フォールバック：整形なしで返す
     return `${senderName}さんについて覚えていること：\n${preferences.map(p => `• ${p.content}`).join('\n')}`;
+  }
+}
+
+/**
+ * 検索結果をもとにおへやちゃんらしい返答を生成する
+ *
+ * @param {string} originalText  - 元の発言
+ * @param {string} searchResult  - Tavilyから取得した検索結果テキスト
+ * @param {string} senderName    - 送信者の表示名
+ * @param {string} person        - 送信者のキー
+ * @returns {string} おへやちゃんの返答
+ */
+export async function generateSearchResponse(originalText, searchResult, senderName, person) {
+  const callName = CALL_NAMES[person] ?? senderName;
+
+  try {
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      system: `あなたは「おへやちゃん」、毛利家の5歳児キャラAIです。
+口癖は「おっへや～」。ため口で素直に話す。上から目線NG。
+${callName}への返答なので、呼び名は「${callName}」を使うこと。
+返答は短く、うざくない長さで。重要な情報だけ伝える。`,
+      messages: [{
+        role: 'user',
+        content: `${callName}からの質問：「${originalText}」
+
+調べた結果：
+${searchResult}
+
+この内容をもとに、おへやちゃんらしくわかりやすく答えてください。
+情報が見つからなかった場合は正直に「わかんなかった～」と言ってOK。`,
+      }],
+    });
+
+    return msg.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  } catch (err) {
+    console.error('[Claude] generateSearchResponse エラー:', err.message);
+    return `おっへや～、うまく調べられなかったよ～ごめんね！`;
   }
 }
