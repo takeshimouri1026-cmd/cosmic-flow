@@ -26,12 +26,11 @@ export async function search(query) {
 
   const data = await res.json();
 
-  // answer（要約）があればそれを優先、なければ各結果のスニペットを結合
-  if (data.answer) {
-    return data.answer;
-  }
+  const urls = data.results.map(r => ({ title: r.title, url: r.url }));
 
-  return data.results
-    .map(r => `【${r.title}】${r.content}`)
-    .join('\n\n');
+  const text = data.answer
+    ? data.answer
+    : data.results.map(r => `【${r.title}】${r.content}`).join('\n\n');
+
+  return { text, urls };
 }

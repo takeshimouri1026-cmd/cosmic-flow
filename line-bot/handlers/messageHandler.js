@@ -179,9 +179,14 @@ export async function handleMessage(event) {
   if (analysis.should_search && analysis.search_query) {
     console.log(`[Handler] 🔍 検索: "${analysis.search_query}"`);
     try {
-      const searchResult = await search(analysis.search_query);
-      const response = await generateSearchResponse(text, searchResult, senderName, person);
-      await replyMessage(replyToken, textMessage(response));
+      const { text: searchText, urls } = await search(analysis.search_query);
+      const response = await generateSearchResponse(text, searchText, senderName, person);
+
+      // URL（最大3件）を末尾に追記
+      const linkLines = urls.slice(0, 3).map(u => `📎 ${u.title}\n${u.url}`).join('\n\n');
+      const fullResponse = linkLines ? `${response}\n\n${linkLines}` : response;
+
+      await replyMessage(replyToken, textMessage(fullResponse));
     } catch (err) {
       console.error('[Handler] 検索エラー:', err.message);
       await replyMessage(replyToken, textMessage(`おっへや～、うまく調べられなかったよ～ごめんね！`));
