@@ -162,39 +162,89 @@ ${prefsText}`,
 
 const DAY_NAMES_JP = ['日', '月', '火', '水', '木', '金', '土'];
 
+// ============================================================
+// スケジュール共有 仕様 (SCHEDULE_SPEC)
+// 表示ルールを変えたい場合はここを修正する
+// ============================================================
+const SCHEDULE_SPEC = `
+【目的】
+家族が「おとうが東京にいるか」「夕飯を作る必要があるか」「一緒に動ける日か」を把握できるようにする。
+
+【表示フォーマット例】
+**6/22(月)**
+ースターツCAM様（13:00-18:00）＠八重洲
+ー夕飯は家族と🍚
+
+**6/23(火)**
+ー●●勉強会（9:00-12:00）
+ー打ち合わせ（13:00-17:00）＠WEB
+ー夕飯ナシ 17:30 太田さんと会食🍺
+
+【カレンダー色ごとのルール】
+■ グレープ（colorId:3）= 研修運営案件
+  → 必ず全件表示。時間と場所（＠）を記載。
+
+■ セージ（colorId:2）= 対人・イベント案件（会議、打ち合わせ等）
+  → 必ず全件表示。時間と場所（＠）を記載。
+
+■ トマト（colorId:11）= 食事の予定
+  → タイトルに👨‍👩‍👧などの家族アイコンがある場合：「夕飯は家族と🍚」と表示
+  → タイトルに🍺🥂🍻などの乾杯アイコンがある場合：「夕飯ナシ ○時 ○○と会食🍺」と表示（タイトルに名前・会食名があれば記載）
+  → どちらもない場合：一人での食事のため表示しない
+
+■ その他の色（colorIdが上記以外）
+  → 表示しない（ただしエレキギターレッスンは必ず表示、時間帯も記載）
+
+【その他のルール】
+- タイトルに「＠」または「@」がある → ＠以降を場所として末尾に「＠●●」の形式で記載
+- 宿泊予定がある日、または連泊の中日 → 「夕飯ナシ（外泊）🌙」
+- 予定がない日 → 「予定なし」とだけ書く（余計な説明不要）
+- 絵文字は🏢🍚🍺🌙程度に抑えて多種使いすぎない
+- 冒頭は「おっへや～！来週のおとうの予定だよ～！」
+- 締めは不要、予定を並べたら終わりでOK
+`;
+
 /**
  * カレンダーの予定から来週の家族向け共有メッセージを生成する
  *
  * @param {object[]} events  - Google Calendar APIのイベント一覧
- * @param {Date} weekStart   - 来週の月曜日
+ * @param {Date} weekStart   - 来週の月曜日（UTC基準、JSTに変換して表示）
  * @returns {string} おへやちゃんのメッセージ
  */
 export async function generateScheduleMessage(events, weekStart) {
-  // 日付ごとにイベントをグループ化
+  const toJstTime = iso => new Date(new Date(iso).getTime() + 9 * 60 * 60 * 1000)
+    .toISOString().substring(11, 16);
+
+  // 日付ごとにイベントをグループ化（JST基準）
   const byDay = {};
   for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart);
-    d.setDate(weekStart.getDate() + i);
-    const key = d.toISOString().split('T')[0];
-    byDay[key] = { date: d, events: [] };
+    const d = new Date(weekStart.getTime() + i * 86400000);
+    // JSTの日付キー
+    const jstD = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+    const key = jstD.toISOString().substring(0, 10);
+    byDay[key] = { date: jstD, events: [] };
   }
-
   for (const ev of events) {
     const dateStr = (ev.start.dateTime ?? ev.start.date ?? '').substring(0, 10);
     if (byDay[dateStr]) byDay[dateStr].events.push(ev);
   }
 
-  // Claudeに渡すテキストを構成
+  // Claudeに渡すイベントテキスト（色・時間・タイトル・場所を含む）
   const eventsText = Object.values(byDay).map(({ date, events }) => {
-    const dayLabel = `${date.getMonth() + 1}/${date.getDate()}(${DAY_NAMES_JP[date.getDay()]})`;
+    const mm  = date.getUTCMonth() + 1;
+    const dd  = date.getUTCDate();
+    const dow = DAY_NAMES_JP[date.getUTCDay()];
+    const dayLabel = `${mm}/${dd}(${dow})`;
     if (events.length === 0) return `${dayLabel}: 予定なし`;
+
     const evList = events.map(ev => {
-      const toJstTime = iso => new Date(new Date(iso).getTime() + 9*60*60*1000)
-        .toISOString().substring(11, 16);
-      const start = ev.start.dateTime ? toJstTime(ev.start.dateTime) : '終日';
-      const end   = ev.end.dateTime   ? toJstTime(ev.end.dateTime)   : '';
-      const loc = ev.location ? `（場所: ${ev.location}）` : '';
-      return `  - ${start}${end ? '〜' + end : ''} ${ev.summary ?? ''}${loc}`;
+      const start   = ev.start.dateTime ? toJstTime(ev.start.dateTime) : '終日';
+      const end     = ev.end.dateTime   ? toJstTime(ev.end.dateTime)   : '';
+      const time    = end ? `${start}-${end}` : start;
+      const colorId = ev.colorId ?? 'none';
+      const title   = ev.summary ?? '';
+      const loc     = ev.location ? `＠${ev.location}` : '';
+      return `  [color:${colorId}] ${time} ${title} ${loc}`.trim();
     }).join('\n');
     return `${dayLabel}:\n${evList}`;
   }).join('\n\n');
@@ -202,22 +252,18 @@ export async function generateScheduleMessage(events, weekStart) {
   try {
     const msg = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 800,
-      system: `あなたは「おへやちゃん」、毛利家の5歳児キャラAIです。
-口癖は「おっへや～」。ため口で素直に話す。`,
+      max_tokens: 1000,
+      system: `あなたは「おへやちゃん」、毛利家の5歳児キャラAIです。口癖は「おっへや～」。ため口で素直に話す。`,
       messages: [{
         role: 'user',
-        content: `以下はおとう（威之）の来週のGoogleカレンダーの予定です。
+        content: `以下はおとう（威之）の来週のGoogleカレンダーの予定データです。
+各行の [color:X] はGoogleカレンダーのカラーIDです。
 
 ${eventsText}
 
-これを毛利家LINEグループ向けに整理して伝えてください。
-以下のルールで：
-- 冒頭は「おっへや～！来週のおとうの予定だよ～！」
-- 曜日ごとに：研修・仕事の内容と場所（わかれば）、夕飯を家で食べそうかどうか
-- 夕飯の判断基準：夜19時以降に外での予定がある or 場所が遠い → 「夕飯は外かも」、そうでなければ「夕飯は一緒に食べられそう」
-- 予定がない日は「お休み」
-- 短くわかりやすく。箇条書きOK。`,
+以下の仕様に従って、毛利家LINEグループ向けのメッセージに整形してください。
+
+${SCHEDULE_SPEC}`,
       }],
     });
 
