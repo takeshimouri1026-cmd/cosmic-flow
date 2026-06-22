@@ -51,8 +51,8 @@ db.exec(`
     updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
   );
 
-  -- 生ログテーブル（嗜好抽出の元データ）
-  -- 家族の発言を一時的に保持し、Claude処理後は削除する
+  -- 生ログテーブル（嗜好抽出の元データ 兼 会話履歴）
+  -- 家族とおへやちゃん自身の発言を保持し、直近の文脈把握に使う
   CREATE TABLE IF NOT EXISTS raw_logs (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     person       TEXT NOT NULL,
@@ -62,6 +62,24 @@ db.exec(`
     timestamp    TEXT NOT NULL,
     processed    INTEGER NOT NULL DEFAULT 0
     -- 0: 未処理, 1: 処理済み（数日後にクリーンアップ対象）
+  );
+
+  -- 行動メモテーブル（おへやちゃんの「ふるまい」への指摘を記憶する）
+  -- 「もっと静かにして」「連打しないで」などの指摘をここに保存し、
+  -- 毎回システムプロンプトに読み込んで行動に反映する。
+  -- 嗜好(preferences)とは別物：これは"場のルール・自分の在り方"の記憶。
+  CREATE TABLE IF NOT EXISTS behavior_notes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    note        TEXT NOT NULL,
+    -- おへやちゃん自身の言葉で言い換えた行動指針（例:「家族の会話が続いている間は割り込まない」）
+    source_text TEXT,
+    -- 元になった家族の発言
+    source_person TEXT,
+    -- 誰からの指摘か
+    status      TEXT NOT NULL DEFAULT 'active'
+                CHECK(status IN ('active', 'deleted')),
+    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
   );
 `);
 

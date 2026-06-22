@@ -96,7 +96,24 @@ export async function handleMessage(event) {
     LIMIT 30
   `).all(person);
 
-  const analysis = await analyzeMessage({ senderName, person, text, existingPrefs });
+  // 直近の会話履歴（同じチャット内・今回の発言より前の最大8件）を文脈として渡す
+  const historyRows = db.prepare(`
+    SELECT person, text FROM raw_logs
+    WHERE ${groupId ? 'group_id = ?' : 'line_user_id = ? AND group_id IS NULL'}
+      AND id < ?
+    ORDER BY id DESC
+    LIMIT 8
+  `).all(groupId ?? userId, logRow.lastInsertRowid);
+  const recentMessages = historyRows
+    .reverse()
+    .map(r => ({ speaker: r.person === 'oheya' ? 'おへや' : (DISPLAY_NAMES[r.person] ?? r.person), text: r.text }));
+
+  // おへやちゃんが守ると決めた行動メモ（家族からの指摘で学習したもの）
+  const behaviorNotes = db.prepare(`
+    SELECT note FROM behavior_notes WHERE status = 'active' ORDER BY updated_at DESC LIMIT 20
+  `).all();
+
+  const analysis = await analyzeMessage({ senderName, person, text, existingPrefs, recentMessages, behaviorNotes });
 
   if (!analysis) {
     console.log('[Handler] Claude分析失敗 → スキップ');
@@ -170,12 +187,14 @@ export async function handleMessage(event) {
       // replyTokenは30秒で切れるので先に即返信し、結果はPush APIで送る
       const sendTo = groupId ?? userId;
       await replyMessage(replyToken, textMessage(`おっへや～！カレンダー見てくるね、ちょっと待って！`));
+      await logBotMessage(groupId, userId, 'カレンダー見てくるね、ちょっと待って！');
       // 非同期で処理（awaitしない）
       (async () => {
         try {
           const { events, weekStart } = await getNextWeekEvents();
           const response = await generateScheduleMessage(events, weekStart);
           await pushMessage(sendTo, textMessage(response));
+          await logBotMessage(groupId, userId, '（来週の予定を共有）');
         } catch (err) {
           console.error('[Handler] カレンダーエラー:', err.message);
           await pushMessage(sendTo, textMessage(`おっへや～、カレンダーがうまく読めなかったよ～ごめんね！`));
@@ -185,11 +204,28 @@ export async function handleMessage(event) {
       return;
     }
 
+    // ふるまいへの指摘 → 行動メモとして保存（メタ認知して返答）
+    if (analysis.intent === 'behavior_feedback' && analysis.behavior_note) {
+      const result = db.prepare(`
+        INSERT INTO behavior_notes (note, source_text, source_person)
+        VALUES (?, ?, ?)
+      `).run(analysis.behavior_note, text, person);
+      console.log(`[DB] 行動メモ保存 id=${result.lastInsertRowid}: ${analysis.behavior_note}`);
+      // メタ認知した返答（analysis.response があればそれ、なければ約束を提示）
+      const reply = analysis.response
+        ?? `おっへや～、わかった。「${analysis.behavior_note}」を心がけるね。`;
+      await replyMessage(replyToken, textMessage(reply));
+      await logBotMessage(groupId, userId, reply);
+      markProcessed(logRow.lastInsertRowid);
+      return;
+    }
+
     // 記憶の更新（新しい情報として既に嗜好保存されているので追加処理なし）
     if (analysis.intent === 'update_memory') {
       // 新しい嗜好は ④ で既に保存済み
       if (analysis.response) {
         await replyMessage(replyToken, textMessage(analysis.response));
+        await logBotMessage(groupId, userId, analysis.response);
       }
       markProcessed(logRow.lastInsertRowid);
       return;
@@ -208,6 +244,7 @@ export async function handleMessage(event) {
       const fullResponse = linkLines ? `${response}\n\n${linkLines}` : response;
 
       await replyMessage(replyToken, textMessage(fullResponse));
+      await logBotMessage(groupId, userId, response);
     } catch (err) {
       console.error('[Handler] 検索エラー:', err.message);
       await replyMessage(replyToken, textMessage(`おっへや～、うまく調べられなかったよ～ごめんね！`));
@@ -219,9 +256,23 @@ export async function handleMessage(event) {
   // --- ⑦ 通常の返答（必要な場面のみ） ---
   if (analysis.should_respond && analysis.response) {
     await replyMessage(replyToken, textMessage(analysis.response));
+    await logBotMessage(groupId, userId, analysis.response);
   }
 
   markProcessed(logRow.lastInsertRowid);
+}
+
+// おへやちゃん自身の発言を履歴(raw_logs)に残す → 次の文脈把握で「連投しない」判断に使う
+// DMでも履歴照合できるよう line_user_id には会話相手の userId を入れる
+async function logBotMessage(groupId, userId, text) {
+  try {
+    db.prepare(`
+      INSERT INTO raw_logs (person, line_user_id, group_id, text, timestamp, processed)
+      VALUES ('oheya', ?, ?, ?, ?, 1)
+    `).run(userId, groupId ?? null, text, new Date().toISOString());
+  } catch (err) {
+    console.error('[DB] おへや発言ログ保存エラー:', err.message);
+  }
 }
 
 // ============================================================
