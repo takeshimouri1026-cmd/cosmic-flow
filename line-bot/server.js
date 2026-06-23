@@ -19,6 +19,7 @@ import crypto from 'crypto';
 
 // ハンドラーとDBを起動時にインポート（DBの初期化がここで走る）
 import { handleMessage } from './handlers/messageHandler.js';
+import { startDiscordBot } from './discord/discordBot.js';
 
 // ============================================================
 // Express アプリの設定
@@ -110,6 +111,9 @@ app.get('/health', (req, res) => {
 // ============================================================
 const PORT = process.env.PORT ?? 3002;
 app.listen(PORT, () => {
+  // Discord窓口も起動（DISCORD_BOT_TOKENがあれば）
+  startDiscordBot();
+
   console.log('');
   console.log('🏠 毛利家LINE bot サーバー起動しました');
   console.log(`   ローカルURL: http://localhost:${PORT}`);

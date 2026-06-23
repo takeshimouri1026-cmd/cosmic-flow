@@ -1,28 +1,16 @@
 /**
  * handlers/messageHandler.js
- * LINEメッセージを受け取って処理するメインロジック
+ * LINE の窓口アダプタ
  *
- * 処理の流れ：
- *  ① ユーザーIDを家族名に変換
- *  ② 生ログをDBに保存（まず記録する）
- *  ③ Claude APIでメッセージを分析（嗜好抽出 + 意図検出）
- *  ④ 嗜好があればDBに保存（または既存記録をマージ）
- *  ⑤ botへの指示（記憶の閲覧/削除）があれば対応
- *  ⑥ 返答すべき場面なら返答
+ * LINEのWebhookイベントを受け取り、共通頭脳 core/brain.js が理解できる
+ * ctx（文脈オブジェクト）に変換して processMessage を呼ぶだけの薄い層。
+ * 嗜好抽出・返答判断などの本体ロジックは brain.js 側にある。
  */
 
-import db from '../db/index.js';
-import { analyzeMessage, generateMemoryView, generateSearchResponse, generateScheduleMessage } from '../services/claudeService.js';
-import { search } from '../services/searchService.js';
-import { getNextWeekEvents } from '../services/calendarService.js';
+import { processMessage } from '../core/brain.js';
 import { replyMessage, pushMessage, textMessage } from '../services/lineClient.js';
 
-// ============================================================
-// 家族の設定
-// ============================================================
-
-// LINE User ID → 内部キー名のマッピング
-// .env に LINE_USER_TAKEYUKI=U〇〇... と設定して使う
+// LINE User ID → 内部キー名のマッピング（.env で設定）
 function getUserMapping() {
   return {
     [process.env.LINE_USER_TAKEYUKI]: 'takeyuki',
@@ -31,28 +19,14 @@ function getUserMapping() {
   };
 }
 
-// 内部キー名 → 表示名（日本語）
-const DISPLAY_NAMES = {
-  takeyuki: '威之',
-  yorimi:   '順美',
-  hana:     '花',
-  family:   '家族全体',
-};
-
-// ============================================================
-// メインの処理関数
-// ============================================================
-
 /**
- * LINEのWebhookイベントを受け取って処理する
- * server.js から呼ばれる。非同期で実行（200 OK返却後に動く）。
- *
- * @param {object} event - LINEのWebhookイベントオブジェクト
+ * LINEのWebhookイベントを処理する（server.js から呼ばれる）
+ * @param {object} event - LINEのWebhookイベント
  */
 export async function handleMessage(event) {
-  // テキストメッセージ以外はスキップ（スタンプ・画像・音声などは今回対象外）
+  // テキストメッセージ以外はスキップ
   if (event.type !== 'message' || event.message.type !== 'text') {
-    console.log(`[Handler] スキップ: type=${event.type}, messageType=${event.message?.type}`);
+    console.log(`[LINE] スキップ: type=${event.type}, messageType=${event.message?.type}`);
     return;
   }
 
@@ -61,267 +35,29 @@ export async function handleMessage(event) {
   const text       = event.message.text.trim();
   const replyToken = event.replyToken;
   const timestamp  = new Date(event.timestamp).toISOString();
-  const today      = timestamp.split('T')[0]; // YYYY-MM-DD
 
-  // --- ① 家族名に変換 ---
-  const userMapping = getUserMapping();
-  const person = userMapping[userId];
-
+  // 家族名に変換
+  const person = getUserMapping()[userId];
   if (!person) {
-    // 未登録ユーザー → ログに表示してスキップ
-    // このログを見て .env に LINE_USER_xxx=U〇〇〇 を設定する
-    console.log(`[Handler] ⚠ 未登録のユーザーID: ${userId}`);
-    console.log(`          .env に LINE_USER_TAKEYUKI=${userId} のように設定してください`);
+    console.log(`[LINE] ⚠ 未登録のユーザーID: ${userId}`);
+    console.log(`        Railway Variables に LINE_USER_xxx=${userId} を追加してください`);
     return;
   }
 
-  const senderName = DISPLAY_NAMES[person];
-  console.log(`\n[Handler] 📩 ${senderName}（${person}）: "${text}"`);
-  console.log(`          グループID: ${groupId}`);
+  // 会話キー（履歴のまとまり単位）
+  const conversationKey = groupId ? `line:group:${groupId}` : `line:dm:${userId}`;
+  // 送信先（Push用）
+  const sendTo = groupId ?? userId;
 
-  // --- ② 生ログをDBに保存 ---
-  const logRow = db.prepare(`
-    INSERT INTO raw_logs (person, line_user_id, group_id, text, timestamp, processed)
-    VALUES (?, ?, ?, ?, ?, 0)
-  `).run(person, userId, groupId, text, timestamp);
-  console.log(`[DB] 生ログ保存 id=${logRow.lastInsertRowid}`);
-
-  // --- ③ Claude APIで分析 ---
-  // その人の既存嗜好をコンテキストとして渡す（マージ判定に使う）
-  const existingPrefs = db.prepare(`
-    SELECT id, category, content, confidence
-    FROM preferences
-    WHERE person = ? AND status = 'active'
-    ORDER BY updated_at DESC
-    LIMIT 30
-  `).all(person);
-
-  // 直近の会話履歴（同じチャット内・今回の発言より前の最大8件）を文脈として渡す
-  const historyRows = db.prepare(`
-    SELECT person, text FROM raw_logs
-    WHERE ${groupId ? 'group_id = ?' : 'line_user_id = ? AND group_id IS NULL'}
-      AND id < ?
-    ORDER BY id DESC
-    LIMIT 8
-  `).all(groupId ?? userId, logRow.lastInsertRowid);
-  const recentMessages = historyRows
-    .reverse()
-    .map(r => ({ speaker: r.person === 'oheya' ? 'おへや' : (DISPLAY_NAMES[r.person] ?? r.person), text: r.text }));
-
-  // おへやちゃんが守ると決めた行動メモ（家族からの指摘で学習したもの）
-  const behaviorNotes = db.prepare(`
-    SELECT note FROM behavior_notes WHERE status = 'active' ORDER BY updated_at DESC LIMIT 20
-  `).all();
-
-  const analysis = await analyzeMessage({ senderName, person, text, existingPrefs, recentMessages, behaviorNotes });
-
-  if (!analysis) {
-    console.log('[Handler] Claude分析失敗 → スキップ');
-    return;
-  }
-
-  console.log('[Claude] 分析結果:', JSON.stringify(analysis, null, 2));
-
-  // --- ④ 嗜好をDBに保存（またはマージ） ---
-  if (analysis.preference?.should_save) {
-    const pref = analysis.preference;
-
-    if (pref.matches_existing_id) {
-      // 同じ意味の嗜好が既にある → confidenceを上げてsource_dateを更新（マージ）
-      const upgraded = upgradeConfidence(pref.confidence);
-      db.prepare(`
-        UPDATE preferences
-        SET confidence  = ?,
-            source_date = ?,
-            updated_at  = datetime('now', 'localtime')
-        WHERE id = ? AND status = 'active'
-      `).run(upgraded, today, pref.matches_existing_id);
-      console.log(`[DB] 嗜好マージ id=${pref.matches_existing_id} → confidence=${upgraded}`);
-    } else {
-      // 新規登録
-      const result = db.prepare(`
-        INSERT INTO preferences (person, category, content, confidence, source_date)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(pref.person ?? person, pref.category, pref.content, pref.confidence, today);
-      console.log(`[DB] 新規嗜好 id=${result.lastInsertRowid}: [${pref.category}] ${pref.content}`);
-    }
-  }
-
-  // --- ⑤ botへの指示を処理 ---
-  if (analysis.directed_at_bot) {
-    console.log(`[Handler] botへの発言 intent=${analysis.intent}`);
-
-    // 記憶の閲覧
-    if (analysis.intent === 'view_memory') {
-      const myPrefs = db.prepare(`
-        SELECT category, content, confidence
-        FROM preferences
-        WHERE person = ? AND status = 'active'
-        ORDER BY category, updated_at DESC
-      `).all(person);
-
-      const response = await generateMemoryView(senderName, myPrefs, person);
-      await replyMessage(replyToken, textMessage(response));
-      markProcessed(logRow.lastInsertRowid);
-      return;
-    }
-
-    // 記憶の削除
-    if (analysis.intent === 'delete_memory' && analysis.delete_target_description) {
-      const deleted = deleteMatchingPreference(person, analysis.delete_target_description);
-      if (deleted) {
-        await replyMessage(replyToken, textMessage(
-          `「${deleted.content}」という記録を消しました。`
-        ));
-      } else {
-        await replyMessage(replyToken, textMessage(
-          `該当する記憶が見つかりませんでした。\n何を忘れればよいか、もう少し詳しく教えていただけますか？`
-        ));
-      }
-      markProcessed(logRow.lastInsertRowid);
-      return;
-    }
-
-    // カレンダー共有
-    if (analysis.intent === 'share_schedule') {
-      // replyTokenは30秒で切れるので先に即返信し、結果はPush APIで送る
-      const sendTo = groupId ?? userId;
-      await replyMessage(replyToken, textMessage(`おっへや～！カレンダー見てくるね、ちょっと待って！`));
-      await logBotMessage(groupId, userId, 'カレンダー見てくるね、ちょっと待って！');
-      // 非同期で処理（awaitしない）
-      (async () => {
-        try {
-          const { events, weekStart } = await getNextWeekEvents();
-          const response = await generateScheduleMessage(events, weekStart);
-          await pushMessage(sendTo, textMessage(response));
-          await logBotMessage(groupId, userId, '（来週の予定を共有）');
-        } catch (err) {
-          console.error('[Handler] カレンダーエラー:', err.message);
-          await pushMessage(sendTo, textMessage(`おっへや～、カレンダーがうまく読めなかったよ～ごめんね！`));
-        }
-      })();
-      markProcessed(logRow.lastInsertRowid);
-      return;
-    }
-
-    // ふるまいへの指摘 → 行動メモとして保存（メタ認知して返答）
-    if (analysis.intent === 'behavior_feedback' && analysis.behavior_note) {
-      const result = db.prepare(`
-        INSERT INTO behavior_notes (note, source_text, source_person)
-        VALUES (?, ?, ?)
-      `).run(analysis.behavior_note, text, person);
-      console.log(`[DB] 行動メモ保存 id=${result.lastInsertRowid}: ${analysis.behavior_note}`);
-      // メタ認知した返答（analysis.response があればそれ、なければ約束を提示）
-      const reply = analysis.response
-        ?? `おっへや～、わかった。「${analysis.behavior_note}」を心がけるね。`;
-      await replyMessage(replyToken, textMessage(reply));
-      await logBotMessage(groupId, userId, reply);
-      markProcessed(logRow.lastInsertRowid);
-      return;
-    }
-
-    // 記憶の更新（新しい情報として既に嗜好保存されているので追加処理なし）
-    if (analysis.intent === 'update_memory') {
-      // 新しい嗜好は ④ で既に保存済み
-      if (analysis.response) {
-        await replyMessage(replyToken, textMessage(analysis.response));
-        await logBotMessage(groupId, userId, analysis.response);
-      }
-      markProcessed(logRow.lastInsertRowid);
-      return;
-    }
-  }
-
-  // --- ⑥ 検索が必要な場合 ---
-  if (analysis.should_search && analysis.search_query) {
-    console.log(`[Handler] 🔍 検索: "${analysis.search_query}"`);
-    try {
-      const { text: searchText, urls } = await search(analysis.search_query);
-      const response = await generateSearchResponse(text, searchText, senderName, person);
-
-      // URL（最大3件）を末尾に追記
-      const linkLines = urls.slice(0, 3).map(u => `📎 ${u.title}\n${u.url}`).join('\n\n');
-      const fullResponse = linkLines ? `${response}\n\n${linkLines}` : response;
-
-      await replyMessage(replyToken, textMessage(fullResponse));
-      await logBotMessage(groupId, userId, response);
-    } catch (err) {
-      console.error('[Handler] 検索エラー:', err.message);
-      await replyMessage(replyToken, textMessage(`おっへや～、うまく調べられなかったよ～ごめんね！`));
-    }
-    markProcessed(logRow.lastInsertRowid);
-    return;
-  }
-
-  // --- ⑦ 通常の返答（必要な場面のみ） ---
-  if (analysis.should_respond && analysis.response) {
-    await replyMessage(replyToken, textMessage(analysis.response));
-    await logBotMessage(groupId, userId, analysis.response);
-  }
-
-  markProcessed(logRow.lastInsertRowid);
-}
-
-// おへやちゃん自身の発言を履歴(raw_logs)に残す → 次の文脈把握で「連投しない」判断に使う
-// DMでも履歴照合できるよう line_user_id には会話相手の userId を入れる
-async function logBotMessage(groupId, userId, text) {
-  try {
-    db.prepare(`
-      INSERT INTO raw_logs (person, line_user_id, group_id, text, timestamp, processed)
-      VALUES ('oheya', ?, ?, ?, ?, 1)
-    `).run(userId, groupId ?? null, text, new Date().toISOString());
-  } catch (err) {
-    console.error('[DB] おへや発言ログ保存エラー:', err.message);
-  }
-}
-
-// ============================================================
-// ユーティリティ
-// ============================================================
-
-// 生ログを処理済みにマーク
-function markProcessed(logId) {
-  db.prepare('UPDATE raw_logs SET processed = 1 WHERE id = ?').run(logId);
-}
-
-// confidence を1段階上げる（low→medium→high）
-function upgradeConfidence(current) {
-  if (current === 'low')    return 'medium';
-  if (current === 'medium') return 'high';
-  return 'high';
-}
-
-/**
- * 削除対象の嗜好を説明文で検索してdeletedにする
- * Claude が返した delete_target_description をもとに最も近い嗜好を探す
- *
- * @param {string} person      - 誰の嗜好か
- * @param {string} description - 削除対象の説明
- * @returns {object|null} 削除した嗜好レコード、なければ null
- */
-function deleteMatchingPreference(person, description) {
-  const prefs = db.prepare(`
-    SELECT * FROM preferences
-    WHERE person = ? AND status = 'active'
-    ORDER BY updated_at DESC
-  `).all(person);
-
-  if (prefs.length === 0) return null;
-
-  // description のキーワードで部分一致検索（シンプルな実装）
-  const keywords = description.replace(/[「」（）]/g, '').split(/[、。\s]+/).filter(k => k.length >= 2);
-  const matched = prefs.find(p =>
-    keywords.some(kw => p.content.includes(kw) || p.category.includes(kw))
-  );
-
-  if (!matched) return null;
-
-  db.prepare(`
-    UPDATE preferences
-    SET status = 'deleted', updated_at = datetime('now', 'localtime')
-    WHERE id = ?
-  `).run(matched.id);
-
-  console.log(`[DB] 嗜好削除 id=${matched.id}: ${matched.content}`);
-  return matched;
+  await processMessage({
+    person,
+    senderId: userId,
+    conversationKey,
+    text,
+    timestamp,
+    platform: 'line',
+    scheduleEnabled: true, // LINEでは予定共有OK
+    reply: async (msg) => { await replyMessage(replyToken, textMessage(msg)); },
+    push:  async (msg) => { await pushMessage(sendTo, textMessage(msg)); },
+  });
 }
