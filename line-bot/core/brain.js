@@ -100,8 +100,11 @@ export async function processMessage(ctx) {
     SELECT note FROM behavior_notes WHERE status = 'active' ORDER BY updated_at DESC LIMIT 20
   `).all();
 
+  // 会話に参加中か（直近4発言以内におへや自身の発言がある＝やりとりが続いている）
+  const engaged = recentMessages.slice(-4).some(m => m.speaker === 'おへや');
+
   // --- ③ Claude分析 ---
-  const analysis = await analyzeMessage({ senderName, person, text, existingPrefs, recentMessages, behaviorNotes });
+  const analysis = await analyzeMessage({ senderName, person, text, existingPrefs, recentMessages, behaviorNotes, engaged });
   if (!analysis) {
     console.log('[Brain] Claude分析失敗 → スキップ');
     markDone();
@@ -222,9 +225,10 @@ export async function processMessage(ctx) {
     }
   }
 
-  // addressedOnly（Discord）: 名前を呼ばれた/メンションされた時だけ反応する
-  if (addressedOnly && !analysis.directed_at_bot) {
-    console.log('[Brain] addressedOnly: 名指しでないため沈黙');
+  // addressedOnly（Discord）: 名指し/メンション、または会話に参加中(engaged)の時だけ反応
+  // → 自分が会話の輪に入っている最中なら、いちいち名前を呼ばれなくても自然に続ける
+  if (addressedOnly && !analysis.directed_at_bot && !engaged) {
+    console.log('[Brain] addressedOnly: 名指しでなく会話にも参加中でないため沈黙');
     markDone();
     return;
   }
