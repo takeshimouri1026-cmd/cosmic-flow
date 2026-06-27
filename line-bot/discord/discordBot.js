@@ -45,16 +45,29 @@ export function startDiscordBot() {
 
   client.on('messageCreate', async (message) => {
     try {
-      // bot自身・他のbotの発言は無視
+      // 他のbot・おへや自身の発言は無視（bot同士の無限ループ防止）
       if (message.author.bot) return;
-      const text = message.content?.trim();
+
+      // メンション文字を読みやすく変換（"<@botID>" → "おへや"、他ユーザーは表示名に）
+      let text = message.content ?? '';
+      text = text.replace(new RegExp(`<@!?${client.user.id}>`, 'g'), 'おへや');
+      for (const [, user] of message.mentions.users) {
+        if (user.id === client.user.id) continue;
+        const disp = message.guild?.members?.cache?.get(user.id)?.displayName ?? user.globalName ?? user.username;
+        text = text.replace(new RegExp(`<@!?${user.id}>`, 'g'), disp);
+      }
+      text = text.trim();
       if (!text) return; // 添付のみ等はスキップ
 
-      const person = getUserMapping()[message.author.id];
-      if (!person) {
-        console.log(`[Discord] ⚠ 未登録のユーザーID: ${message.author.id}（${message.author.username}）`);
-        console.log(`          Railway Variables に DISCORD_USER_xxx=${message.author.id} を追加してください`);
-        return;
+      // 家族なら内部キー、それ以外は 'guest'（反応はするが記憶はしない）
+      const mapped = getUserMapping()[message.author.id];
+      const person = mapped ?? 'guest';
+      const senderName = mapped
+        ? undefined // brain側でDISPLAY_NAMESから解決
+        : (message.member?.displayName ?? message.author.globalName ?? message.author.username);
+
+      if (!mapped) {
+        console.log(`[Discord] ゲスト発言: ${senderName}（${message.author.id}）`);
       }
 
       const conversationKey = `discord:${message.channelId}`;
@@ -62,6 +75,7 @@ export function startDiscordBot() {
 
       await processMessage({
         person,
+        senderName,
         senderId: message.author.id,
         conversationKey,
         text,

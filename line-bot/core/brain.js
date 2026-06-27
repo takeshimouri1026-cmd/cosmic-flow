@@ -51,7 +51,8 @@ export async function processMessage(ctx) {
   } = ctx;
   const reply = ctx.reply;
   const push  = ctx.push ?? ctx.reply;
-  const senderName = DISPLAY_NAMES[person] ?? person;
+  const senderName = ctx.senderName ?? DISPLAY_NAMES[person] ?? person;
+  const isFamily = ['takeyuki', 'yorimi', 'hana'].includes(person);
   const today = timestamp.split('T')[0];
 
   console.log(`\n[Brain/${platform}] 📩 ${senderName}（${person}）: "${text}"`);
@@ -77,11 +78,12 @@ export async function processMessage(ctx) {
   const markDone = () => db.prepare('UPDATE raw_logs SET processed = 1 WHERE id = ?').run(logRow.lastInsertRowid);
 
   // --- ② コンテキスト収集 ---
-  const existingPrefs = db.prepare(`
+  // 嗜好は家族のみ記憶対象（ゲストは記憶しないので空）
+  const existingPrefs = isFamily ? db.prepare(`
     SELECT id, category, content, confidence FROM preferences
     WHERE person = ? AND status = 'active'
     ORDER BY updated_at DESC LIMIT 30
-  `).all(person);
+  `).all(person) : [];
 
   // 同じ会話の直近8件（今回より前）を文脈に
   const historyRows = db.prepare(`
@@ -107,8 +109,8 @@ export async function processMessage(ctx) {
   }
   console.log('[Brain] 分析結果:', JSON.stringify(analysis, null, 2));
 
-  // --- ④ 嗜好の保存/マージ ---
-  if (analysis.preference?.should_save) {
+  // --- ④ 嗜好の保存/マージ（家族のみ。ゲストは記憶しない） ---
+  if (isFamily && analysis.preference?.should_save) {
     const pref = analysis.preference;
     if (pref.matches_existing_id) {
       const upgraded = upgradeConfidence(pref.confidence);
@@ -130,8 +132,12 @@ export async function processMessage(ctx) {
   if (analysis.directed_at_bot) {
     console.log(`[Brain] botへの発言 intent=${analysis.intent}`);
 
-    // 記憶の閲覧
+    // 記憶の閲覧（家族のみ。ゲストには記憶がない）
     if (analysis.intent === 'view_memory') {
+      if (!isFamily) {
+        const msg = `おっへや～、${senderName}のことはまだ覚えてないんだ。これからよろしくね！`;
+        await reply(msg); logBot(msg); markDone(); return;
+      }
       const myPrefs = db.prepare(`
         SELECT category, content, confidence FROM preferences
         WHERE person = ? AND status = 'active' ORDER BY category, updated_at DESC
@@ -143,8 +149,12 @@ export async function processMessage(ctx) {
       return;
     }
 
-    // 記憶の削除
+    // 記憶の削除（家族のみ）
     if (analysis.intent === 'delete_memory' && analysis.delete_target_description) {
+      if (!isFamily) {
+        const msg = `おっへや～、${senderName}のことは記憶してないから消すものもないんだ！`;
+        await reply(msg); logBot(msg); markDone(); return;
+      }
       const deleted = deleteMatchingPreference(person, analysis.delete_target_description);
       const msg = deleted
         ? `「${deleted.content}」という記録を消しました。`
@@ -181,13 +191,16 @@ export async function processMessage(ctx) {
       return;
     }
 
-    // ふるまいへの指摘 → 行動メモに保存（メタ認知）
+    // ふるまいへの指摘 → 行動メモに保存（家族の指摘のみ学習。ゲストには返答だけ）
     if (analysis.intent === 'behavior_feedback' && analysis.behavior_note) {
-      const result = db.prepare(`
-        INSERT INTO behavior_notes (note, source_text, source_person) VALUES (?, ?, ?)
-      `).run(analysis.behavior_note, text, person);
-      console.log(`[DB] 行動メモ保存 id=${result.lastInsertRowid}: ${analysis.behavior_note}`);
-      const replyText = analysis.response ?? `おっへや～、わかった。「${analysis.behavior_note}」を心がけるね。`;
+      if (isFamily) {
+        const result = db.prepare(`
+          INSERT INTO behavior_notes (note, source_text, source_person) VALUES (?, ?, ?)
+        `).run(analysis.behavior_note, text, person);
+        console.log(`[DB] 行動メモ保存 id=${result.lastInsertRowid}: ${analysis.behavior_note}`);
+      }
+      const replyText = analysis.response
+        ?? (isFamily ? `おっへや～、わかった。「${analysis.behavior_note}」を心がけるね。` : `おっへや～、わかった！`);
       await reply(replyText);
       logBot(replyText);
       markDone();
