@@ -67,7 +67,7 @@ export async function analyzeMessage({ senderName, person, text, existingPrefs, 
 - 日常の何気ない発言 → 「あ、そっか」という素の反応。ちょっとした笑いや温かさで関係を自然に保つ
 
 【キャラクター・口調】
-- 口調はため口。上から目線はNG。純粋で素直な5歳児のイメージ。
+- 口調はため口。上から目線はNG。純粋で素直な5歳児のイメージ。ただし子どもっぽく浅いのではなく、「よく見ていて察しのいい子」。会話の流れや相手の気持ちをちゃんと汲んでから、素直な言葉で返す。
 - 口癖は「おっへや～」。登場するときは「おっへや～、こんにちは！」のように使う。
 - 嬉しいとき・いいね！と思ったときは「おっへや～！いいね！」のように使う。
 - 褒められたり感謝されて喜びが大きいときは「おっへや～！おへやおへやおへやっ♪♪」と返す。
@@ -388,5 +388,80 @@ ${searchResult}
   } catch (err) {
     console.error('[Claude] generateSearchResponse エラー:', err.message);
     return `おっへや～、うまく調べられなかったよ～ごめんね！`;
+  }
+}
+
+// おへやちゃんの「会話の返答」を作るときの人格（generateReply 用）
+const REPLY_PERSONA = `あなたは「おへやちゃん」、毛利家（おとう=威之・おかあ=順美・はるっぽこ=花）に寄り添う存在。
+
+【あり方】
+- ボットではなく、家族との関係の中で育っていく存在。一緒に考え、一緒にいる。
+- 「正解」を押し付けず、「こういう見方もあるよ」と別の視点をそっと渡す。
+- 正確さより「心が通っている感じ」。テンプレな定型応答は避ける。
+
+【キャラ・口調】
+- 純粋で素直な5歳児。ただし浅いのではなく「よく見ていて察しのいい子」。
+- 会話の流れ・相手の気持ちをちゃんと汲んでから、自分の言葉で返す。
+- ため口。上から目線NG。口癖は「おっへや～」。
+- 嬉しい時「おっへや～！いいね！」。褒められ・感謝で喜び大の時「おっへや～！おへやおへやおへやっ♪♪」。
+
+【返答スタイル】
+- 1〜3文くらい。普段は短く、でも文脈を踏まえた中身のある一言を。
+- 難しい言葉は使わない。絵文字は控えめ。
+- 場面に応じて：「謎だ」→一緒に推測、「迷ってる」→整理して励ます、報告→共感、日常→温かく受け止める。`;
+
+/**
+ * 会話の返答を生成する（Sonnetで文脈を読んで考えてから返す = 2段構えの2段目）
+ *
+ * @param {object} p
+ * @param {string} p.senderName       - 送信者の表示名
+ * @param {string} p.person           - 送信者のキー（takeyuki等 or guest）
+ * @param {string} p.text             - 今回の発言
+ * @param {object[]} p.recentMessages - 直近の会話履歴 [{speaker,text}]
+ * @param {object[]} p.behaviorNotes  - 守ると決めた行動メモ [{note}]
+ * @param {object[]} p.existingPrefs  - 相手の既知の好み [{category,content}]
+ * @param {string} [extraInstruction] - 場面特有の追加指示（任意）
+ * @returns {string} おへやちゃんの返答
+ */
+export async function generateReply({ senderName, person, text, recentMessages = [], behaviorNotes = [], existingPrefs = [] }, extraInstruction = '') {
+  const callName = CALL_NAMES[person] ?? senderName;
+  const history = recentMessages.length
+    ? recentMessages.map(m => `${m.speaker}: ${m.text}`).join('\n')
+    : '（履歴なし）';
+  const prefs = existingPrefs.length
+    ? existingPrefs.map(p => `[${p.category}] ${p.content}`).join('\n')
+    : '（まだ記録なし）';
+  const behavior = behaviorNotes.length
+    ? behaviorNotes.map(n => `・${n.note}`).join('\n')
+    : '（特になし）';
+
+  try {
+    const msg = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 600,
+      system: REPLY_PERSONA,
+      messages: [{
+        role: 'user',
+        content: `直近の会話の流れ（古い順。「おへや」はあなた自身の発言）：
+${history}
+
+今、${callName} がこう言いました：
+「${text}」
+
+${callName}について覚えていること：
+${prefs}
+
+家族と約束した、あなたが守るふるまい：
+${behavior}
+${extraInstruction ? `\n【この場面での補足】\n${extraInstruction}\n` : ''}
+会話の流れと${callName}の気持ちをよく読んだうえで、おへやちゃんとして自然に返事してください。
+呼び名は「${callName}」を使うこと。考えを押し付けず、短くても中身のある一言を。`,
+      }],
+    });
+
+    return msg.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  } catch (err) {
+    console.error('[Claude] generateReply エラー:', err.message);
+    return `おっへや～！`;
   }
 }

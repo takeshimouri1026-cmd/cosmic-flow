@@ -18,7 +18,7 @@
  */
 
 import db from '../db/index.js';
-import { analyzeMessage, generateMemoryView, generateSearchResponse, generateScheduleMessage } from '../services/claudeService.js';
+import { analyzeMessage, generateMemoryView, generateSearchResponse, generateScheduleMessage, generateReply } from '../services/claudeService.js';
 import { search } from '../services/searchService.js';
 import { getNextWeekEvents } from '../services/calendarService.js';
 
@@ -199,8 +199,13 @@ export async function processMessage(ctx) {
         `).run(analysis.behavior_note, text, person);
         console.log(`[DB] 行動メモ保存 id=${result.lastInsertRowid}: ${analysis.behavior_note}`);
       }
-      const replyText = analysis.response
-        ?? (isFamily ? `おっへや～、わかった。「${analysis.behavior_note}」を心がけるね。` : `おっへや～、わかった！`);
+      // メタ認知した返答をSonnetで生成（指摘を踏まえて自分の言葉で）
+      const replyText = await generateReply(
+        { senderName, person, text, recentMessages, behaviorNotes, existingPrefs },
+        isFamily
+          ? `${senderName}から自分のふるまいについて指摘・お願いを受けた。空返事せず、なぜそう言われたか自分の言葉で意味づけして、次からこうすると伝える。守ると決めた指針:「${analysis.behavior_note}」`
+          : `自分のふるまいについて軽く言われた。素直に受け止めて短く返す。`
+      );
       await reply(replyText);
       logBot(replyText);
       markDone();
@@ -209,10 +214,9 @@ export async function processMessage(ctx) {
 
     // 記憶の更新（嗜好は④で保存済み）
     if (analysis.intent === 'update_memory') {
-      if (analysis.response) {
-        await reply(analysis.response);
-        logBot(analysis.response);
-      }
+      const replyText = await generateReply({ senderName, person, text, recentMessages, behaviorNotes, existingPrefs });
+      await reply(replyText);
+      logBot(replyText);
       markDone();
       return;
     }
@@ -243,10 +247,11 @@ export async function processMessage(ctx) {
     return;
   }
 
-  // --- ⑦ 通常の返答 ---
-  if (analysis.should_respond && analysis.response) {
-    await reply(analysis.response);
-    logBot(analysis.response);
+  // --- ⑦ 通常の返答（Sonnetで文脈を読んで生成 = 2段構えの2段目） ---
+  if (analysis.should_respond) {
+    const replyText = await generateReply({ senderName, person, text, recentMessages, behaviorNotes, existingPrefs });
+    await reply(replyText);
+    logBot(replyText);
   }
   markDone();
 }
