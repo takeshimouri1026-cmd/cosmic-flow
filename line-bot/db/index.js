@@ -81,6 +81,23 @@ db.exec(`
     created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
   );
+
+  -- 自己改善の「提案」テーブル（毎晩の振り返りで生成 → もうりが承認したら behavior_notes へ）
+  CREATE TABLE IF NOT EXISTS behavior_proposals (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    note        TEXT NOT NULL,   -- 提案するふるまいの指針
+    rationale   TEXT,            -- なぜそう提案するのか（振り返りの根拠）
+    status      TEXT NOT NULL DEFAULT 'pending'
+                CHECK(status IN ('pending', 'approved', 'rejected')),
+    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+  );
+
+  -- 汎用メタ情報（最後に振り返った日時など）
+  CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+  );
 `);
 
 console.log('[DB] SQLite接続OK →', DB_PATH);

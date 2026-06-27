@@ -20,6 +20,7 @@ import crypto from 'crypto';
 // ハンドラーとDBを起動時にインポート（DBの初期化がここで走る）
 import { handleMessage } from './handlers/messageHandler.js';
 import { startDiscordBot } from './discord/discordBot.js';
+import { scheduleDailyReflection } from './core/reflection.js';
 
 // ============================================================
 // Express アプリの設定
@@ -113,6 +114,9 @@ const PORT = process.env.PORT ?? 3002;
 app.listen(PORT, () => {
   // Discord窓口も起動（DISCORD_BOT_TOKENがあれば）
   startDiscordBot();
+
+  // 毎晩22時(JST)に自己振り返り（提案→もうりに承認依頼）
+  scheduleDailyReflection(22);
 
   console.log('');
   console.log('🏠 毛利家LINE bot サーバー起動しました');

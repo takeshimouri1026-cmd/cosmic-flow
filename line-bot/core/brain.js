@@ -18,9 +18,10 @@
  */
 
 import db from '../db/index.js';
-import { analyzeMessage, generateMemoryView, generateSearchResponse, generateScheduleMessage, generateReply } from '../services/claudeService.js';
+import { analyzeMessage, generateMemoryView, generateSearchResponse, generateScheduleMessage, generateReply, interpretProposalReply } from '../services/claudeService.js';
 import { search } from '../services/searchService.js';
 import { getNextWeekEvents } from '../services/calendarService.js';
+import { runReflection } from './reflection.js';
 
 // 内部キー名 → 表示名（日本語）
 export const DISPLAY_NAMES = {
@@ -76,6 +77,37 @@ export async function processMessage(ctx) {
     }
   };
   const markDone = () => db.prepare('UPDATE raw_logs SET processed = 1 WHERE id = ?').run(logRow.lastInsertRowid);
+
+  // --- ★ 自己改善：pending提案への承認/却下返信を処理（家族のみ） ---
+  if (isFamily) {
+    const pending = db.prepare(`SELECT id, note FROM behavior_proposals WHERE status = 'pending' ORDER BY id ASC`).all();
+    if (pending.length > 0) {
+      const verdict = await interpretProposalReply(text, pending);
+      if (verdict?.responding) {
+        const approvedNotes = [];
+        for (const n of (verdict.approve ?? [])) {
+          const p = pending[n - 1];
+          if (!p) continue;
+          db.prepare(`UPDATE behavior_proposals SET status='approved', updated_at=datetime('now','localtime') WHERE id=?`).run(p.id);
+          db.prepare(`INSERT INTO behavior_notes (note, source_text, source_person) VALUES (?, ?, ?)`)
+            .run(p.note, '自己振り返りからの提案→承認', person);
+          approvedNotes.push(p.note);
+        }
+        for (const n of (verdict.reject ?? [])) {
+          const p = pending[n - 1];
+          if (!p) continue;
+          db.prepare(`UPDATE behavior_proposals SET status='rejected', updated_at=datetime('now','localtime') WHERE id=?`).run(p.id);
+        }
+        const msg = approvedNotes.length
+          ? `おっへや～！わかった、「${approvedNotes.join('」「')}」を心がけるね。ありがとう！`
+          : `おっへや～、わかった！今回は今のままでいくね。`;
+        await reply(msg);
+        logBot(msg);
+        markDone();
+        return;
+      }
+    }
+  }
 
   // --- ② コンテキスト収集 ---
   // 嗜好は家族のみ記憶対象（ゲストは記憶しないので空）
@@ -211,6 +243,26 @@ export async function processMessage(ctx) {
       );
       await reply(replyText);
       logBot(replyText);
+      markDone();
+      return;
+    }
+
+    // 手動で振り返り（家族のみ）
+    if (analysis.intent === 'reflect_now') {
+      if (!isFamily) {
+        const msg = `おっへや～、それはおうちの人とやることなんだ！`;
+        await reply(msg); logBot(msg); markDone(); return;
+      }
+      await reply(`おっへや～、ちょっと自分の会話ふりかえってみるね…！`);
+      (async () => {
+        try {
+          const out = await runReflection({ manual: true });
+          if (out) { await push(out); logBot('（振り返りの提案）'); }
+        } catch (err) {
+          console.error('[Brain] reflect_now エラー:', err.message);
+          await push(`おっへや～、うまくふりかえれなかった…ごめんね！`);
+        }
+      })();
       markDone();
       return;
     }

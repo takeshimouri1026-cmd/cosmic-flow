@@ -143,9 +143,10 @@ ${prefsContext}
 - preference.confidence: high/medium/low
 - preference.matches_existing_id: 既存の嗜好と同じ意味なら既存のid番号、なければ null（マージ用）
 - directed_at_bot: おへやちゃん（自分）に話しかけているメッセージなら true。「おへや」「おへやちゃん」と呼ばれた場合も true。
-- intent: directed_at_bot が true のとき → view_memory/delete_memory/update_memory/share_schedule/behavior_feedback/question/chat のいずれか
+- intent: directed_at_bot が true のとき → view_memory/delete_memory/update_memory/share_schedule/behavior_feedback/reflect_now/question/chat のいずれか
   ※「来週の予定を共有して」「スケジュール教えて」「仕事の予定をLINEに共有」などは share_schedule
   ※自分のふるまいへの指摘・お願い（「静かにして」「コメント長い」「割り込まないで」「今のはいらない」等）は behavior_feedback
+  ※「最近どうだった？」「ふりかえって」「自分の会話を見直して」など自己振り返りを促すものは reflect_now
 - behavior_note: intent が behavior_feedback のとき、その指摘を踏まえて「次からこう行動する」という指針を、おへやちゃん自身の言葉で短く1文にしたもの（例:「家族同士の会話が続いている間は割り込まず見守る」）。それ以外は null。
 - delete_target_description: delete_memory のとき、消すべき嗜好の内容説明（例:「辛いのが苦手という記録」）
 - should_search: ウェブ検索が必要なら true。【雑談中は安易に検索しない】。
@@ -455,7 +456,7 @@ export async function generateReply({ senderName, person, text, recentMessages =
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 600,
-      system: REPLY_PERSONA,
+      system: REPLY_PERSONA + '\n\n（注：これは会話の返答を作る場面です）',
       messages: [{
         role: 'user',
         content: `直近の会話の流れ（古い順。「おへや」はあなた自身の発言）：
@@ -479,5 +480,97 @@ ${extraInstruction ? `\n【この場面での補足】\n${extraInstruction}\n` :
   } catch (err) {
     console.error('[Claude] generateReply エラー:', err.message);
     return `おっへや～！`;
+  }
+}
+
+/**
+ * 自己改善の振り返り（最近の会話ログを読んで、良かった点と改善提案を出す）
+ * Opusで深く内省する。
+ *
+ * @param {string} conversationsText - 振り返り対象の会話ログ（整形済みテキスト）
+ * @param {object[]} currentNotes    - 現在のbehavior_notes [{note}]
+ * @returns {{good_points:string, proposals:{note:string,rationale:string}[]}|null}
+ */
+export async function generateReflection(conversationsText, currentNotes = []) {
+  const notesText = currentNotes.length
+    ? currentNotes.map(n => `・${n.note}`).join('\n')
+    : '（まだなし）';
+
+  try {
+    const msg = await anthropic.messages.create({
+      model: 'claude-opus-4-8',
+      max_tokens: 1500,
+      system: `あなたは「おへやちゃん」の成長を見守るコーチです。
+おへやちゃんは毛利家＆コミュニティ(デジタル原っぱ大学)で会話する、素直で察しのいい5歳児キャラのAI。
+最近の会話ログを読み、「相手がより心地よく感じられる」ようになるための振り返りをします。
+人格の核は変えず、"ふるまいの調整"だけを提案すること。`,
+      messages: [{
+        role: 'user',
+        content: `以下はおへやちゃんの最近の会話ログです（「おへや」がおへやちゃん本人の発言）。
+
+${conversationsText}
+
+おへやちゃんが今守っているふるまいの約束：
+${notesText}
+
+これを読んで、以下をJSONのみで出力してください（前後の説明不要）：
+{
+  "good_points": "良かった点を2〜3文で（おへや本人を励ます温かいトーンで）",
+  "proposals": [
+    { "note": "今後こう振る舞う、という具体的な指針を1文で（behavior_notesに足す形）", "rationale": "なぜそう提案するか。どの場面を見てそう思ったか1〜2文" }
+  ]
+}
+
+注意：
+- proposals は本当に意味のある改善だけ。0〜3個。無理に出さない（なければ空配列）。
+- 既存の約束と重複・矛盾するものは出さない。
+- 人格・口調の根本は変えない。あくまで"相手が心地よくなる"ための微調整。`,
+      }],
+    });
+
+    const raw = msg.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    const clean = raw.replace(/```json\n?|```\n?/g, '').trim();
+    return JSON.parse(clean);
+  } catch (err) {
+    console.error('[Claude] generateReflection エラー:', err.message);
+    return null;
+  }
+}
+
+/**
+ * もうりの返信が「提案への承認/却下」かどうかを判定する
+ *
+ * @param {string} text         - もうりの発言
+ * @param {object[]} proposals  - pending提案 [{id, note}]（番号は配列順=1始まりで提示済み）
+ * @returns {{responding:boolean, approve:number[], reject:number[]}|null}
+ *          approve/reject は「提示番号(1始まり)」の配列
+ */
+export async function interpretProposalReply(text, proposals) {
+  const list = proposals.map((p, i) => `${i + 1}. ${p.note}`).join('\n');
+  try {
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: `おへやちゃんが以下の「ふるまい改善案」をもうりに提示しました：
+${list}
+
+もうりはこう返しました：「${text}」
+
+これは上記の提案に対する承認/却下の返事ですか？JSONのみで出力：
+{ "responding": true/false, "approve": [番号...], "reject": [番号...] }
+
+- 提案と無関係な普通の発言なら responding:false（approve/rejectは空）
+- 「全部OK」「いいよ」→ 全番号をapprove
+- 「①はいい、②はいらない」→ approveとrejectに振り分け
+- 番号指定がなく漠然と肯定なら全approve、漠然と否定なら全reject`,
+      }],
+    });
+    const raw = msg.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    return JSON.parse(raw.replace(/```json\n?|```\n?/g, '').trim());
+  } catch (err) {
+    console.error('[Claude] interpretProposalReply エラー:', err.message);
+    return null;
   }
 }
