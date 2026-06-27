@@ -82,6 +82,7 @@ export function startDiscordBot() {
         timestamp,
         platform: 'discord',
         scheduleEnabled: false, // Discordでは予定共有しない
+        addressedOnly: true,    // 名前を呼ばれた/メンションされた時だけ反応
         reply: async (msg) => { await message.channel.send(msg); },
         push:  async (msg) => { await message.channel.send(msg); },
       });

@@ -47,7 +47,7 @@ export const DISPLAY_NAMES = {
 export async function processMessage(ctx) {
   const {
     person, senderId, conversationKey, text, timestamp,
-    platform = 'line', scheduleEnabled = true,
+    platform = 'line', scheduleEnabled = true, addressedOnly = false,
   } = ctx;
   const reply = ctx.reply;
   const push  = ctx.push ?? ctx.reply;
@@ -216,6 +216,13 @@ export async function processMessage(ctx) {
       markDone();
       return;
     }
+  }
+
+  // addressedOnly（Discord）: 名前を呼ばれた/メンションされた時だけ反応する
+  if (addressedOnly && !analysis.directed_at_bot) {
+    console.log('[Brain] addressedOnly: 名指しでないため沈黙');
+    markDone();
+    return;
   }
 
   // --- ⑥ 検索 ---
