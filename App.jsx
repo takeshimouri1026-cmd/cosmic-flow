@@ -197,11 +197,20 @@ export default function App({ session }) {
           {/* グラフ */}
           <div className="bg-white/5 rounded-2xl p-5 border border-amber-200/10">
             <h2 className="font-serif text-xl mb-3">今週のバイオリズム</h2>
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={280}>
               <LineChart data={data.week}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#ffffff14" />
-                <XAxis dataKey="label" stroke="#a8a29e" tickFormatter={(v, i) => `${v}(${data.week[i].weekday})`} />
-                <YAxis domain={[-100, 100]} stroke="#a8a29e" />
+                <XAxis
+                  dataKey="label"
+                  stroke="#a8a29e"
+                  tick={{ fontSize: 11, fill: "#a8a29e" }}
+                  tickFormatter={(v) => {
+                    const d = data.week.find(w => w.label === v);
+                    return d ? `${v}(${d.weekday})` : v;
+                  }}
+                  interval={0}
+                />
+                <YAxis domain={[-100, 100]} stroke="#a8a29e" width={30} />
                 <Tooltip contentStyle={{ background: "#1c1917", border: "1px solid #44403c", borderRadius: 8 }} />
                 <Legend formatter={(value) => <span style={{ color: "#d6d3d1", fontSize: 12 }}>{value}</span>} />
                 <ReferenceLine x={data.week.find(d => d.offset === 0)?.label} stroke="#fbbf24" strokeDasharray="4 4" />
