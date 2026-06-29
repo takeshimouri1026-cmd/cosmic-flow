@@ -96,10 +96,15 @@ export default function App({ session }) {
   // ログ保存
   async function handleSaveLog() {
     if (!logText.trim()) return;
-    await supabase.from("logs").upsert(
+    setError("");
+    const { error } = await supabase.from("logs").upsert(
       { user_id: userId, log_date: logDate, text: logText.trim() },
       { onConflict: "user_id,log_date" }
     );
+    if (error) {
+      setError("ログの保存に失敗しました：" + error.message);
+      return;
+    }
     setLogText("");
     setLogSaved(true);
     setTimeout(() => setLogSaved(false), 2000);
