@@ -50,7 +50,7 @@ export default function App({ session }) {
   // ログ読み込み
   async function loadLogs() {
     const { data } = await supabase.from("logs").select("*")
-      .eq("user_id", userId).order("log_date", { ascending: false });
+      .eq("user_id", userId).order("created_at", { ascending: false });
     if (data) setLogs(data);
   }
 
@@ -97,9 +97,8 @@ export default function App({ session }) {
   async function handleSaveLog() {
     if (!logText.trim()) return;
     setError("");
-    const { error } = await supabase.from("logs").upsert(
-      { user_id: userId, log_date: logDate, text: logText.trim() },
-      { onConflict: "user_id,log_date" }
+    const { error } = await supabase.from("logs").insert(
+      { user_id: userId, log_date: logDate, text: logText.trim() }
     );
     if (error) {
       setError("ログの保存に失敗しました：" + error.message);
@@ -252,7 +251,8 @@ export default function App({ session }) {
 
           {/* ふりかえりログ入力 */}
           <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-5 border border-white/10 shadow-[0_0_40px_rgba(120,110,200,0.06)] space-y-3">
-            <h2 className="font-serif text-xl text-amber-200">週のふりかえりを記録する</h2>
+            <h2 className="font-serif text-xl text-amber-200">気づきを記録する</h2>
+            <p className="text-xs text-stone-500">思い立ったときに、いつでも何度でも書き残せます。</p>
             <div className="flex gap-3 items-center">
               <span className="text-xs text-stone-400 whitespace-nowrap">記録日</span>
               <input type="date"
@@ -262,7 +262,7 @@ export default function App({ session }) {
             <textarea
               className="w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none text-sm resize-none"
               rows={4}
-              placeholder="今週の気づき・体調・出来事・感情の変化などを自由に書いてください…"
+              placeholder="気づき・体調・出来事・感情の変化などを自由に書いてください…"
               value={logText} onChange={(e) => setLogText(e.target.value)}
             />
             <div className="flex items-center gap-3">
@@ -278,7 +278,7 @@ export default function App({ session }) {
           {logs.length > 0 && (
             <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-5 border border-white/10 shadow-[0_0_40px_rgba(120,110,200,0.06)] space-y-3">
               <div className="flex justify-between items-center">
-                <h2 className="font-serif text-xl text-amber-200">過去のふりかえりログ</h2>
+                <h2 className="font-serif text-xl text-amber-200">これまでの記録</h2>
                 <button onClick={() => setShowLogs(!showLogs)} className="text-xs text-stone-400 hover:text-stone-200 transition">
                   {showLogs ? "閉じる" : `${logs.length}件を表示`}
                 </button>
@@ -288,7 +288,14 @@ export default function App({ session }) {
                   {logs.map((l) => (
                     <div key={l.id} className="bg-black/20 rounded-xl p-4 border border-white/5">
                       <div className="flex justify-between items-start mb-1">
-                        <span className="text-xs text-amber-300/70">{l.log_date}</span>
+                        <span className="text-xs text-amber-300/70">
+                          {l.log_date}
+                          {l.created_at && (
+                            <span className="text-stone-500 ml-2">
+                              {new Date(l.created_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          )}
+                        </span>
                         <button onClick={() => handleDeleteLog(l.id)} className="text-xs text-stone-600 hover:text-rose-400 transition">削除</button>
                       </div>
                       <p className="text-sm text-stone-300 whitespace-pre-line leading-relaxed">{l.text}</p>
