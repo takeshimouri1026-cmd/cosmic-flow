@@ -16,6 +16,22 @@ app.use(express.json());
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// モデル応答からJSONを安全に取り出す（前後の説明やマークダウンが混ざっても拾う）
+function extractJSON(text) {
+  const cleaned = text.replace(/```json|```/g, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // 最初の { から最後の } までを抜き出して再試行
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start !== -1 && end !== -1 && end > start) {
+      return JSON.parse(cleaned.slice(start, end + 1));
+    }
+    throw new Error("JSON parse failed");
+  }
+}
+
 // 今週のアドバイスを生成
 app.post("/api/advice", async (req, res) => {
   const { week, awakening, overall, name } = req.body;
@@ -58,8 +74,7 @@ ${summary}
       .filter((b) => b.type === "text")
       .map((b) => b.text)
       .join("");
-    const clean = text.replace(/```json|```/g, "").trim();
-    res.json(JSON.parse(clean));
+    res.json(extractJSON(text));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "アドバイスの生成に失敗しました。APIキーと接続を確認してください。" });
@@ -115,8 +130,7 @@ ${logSummary}
       .filter((b) => b.type === "text")
       .map((b) => b.text)
       .join("");
-    const clean = text.replace(/```json|```/g, "").trim();
-    res.json(JSON.parse(clean));
+    res.json(extractJSON(text));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "アドバイスの生成に失敗しました。APIキーと接続を確認してください。" });
