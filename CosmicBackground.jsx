@@ -68,8 +68,22 @@ export default function CosmicBackground() {
       });
     }
 
+    // 宇宙の呼吸：吸う4秒・吐く6秒の非対称サイクル(計10秒)
+    // breath: 0(吐ききった静寂) 〜 1(吸いきった充溢)
+    const INHALE = 4, EXHALE = 6, CYCLE = INHALE + EXHALE;
+    const breathAt = (t) => {
+      const p = t % CYCLE;
+      if (p < INHALE) {
+        // 吸う：滑らかに満ちる
+        return 0.5 - 0.5 * Math.cos((p / INHALE) * Math.PI);
+      }
+      // 吐く：ゆっくり沈む
+      return 0.5 + 0.5 * Math.cos(((p - INHALE) / EXHALE) * Math.PI);
+    };
+
     const draw = (now) => {
       const t = (now - startTime) / 1000;
+      const breath = breathAt(t);
       ctx.clearRect(0, 0, width, height);
 
       // 背景グラデーション
@@ -77,7 +91,9 @@ export default function CosmicBackground() {
         width * 0.5, height * 0.35, 0,
         width * 0.5, height * 0.35, Math.max(width, height) * 0.8
       );
-      bg.addColorStop(0, "#171335");
+      // 中心の明度を呼吸で揺らす（吸うと淡く満ち、吐くと深く沈む）
+      const coreL = 18 + breath * 9; // 18%〜27%
+      bg.addColorStop(0, `hsl(252, 45%, ${coreL}%)`);
       bg.addColorStop(0.5, "#0d0b22");
       bg.addColorStop(1, "#050410");
       ctx.fillStyle = bg;
@@ -92,7 +108,8 @@ export default function CosmicBackground() {
       for (const n of nebulae) {
         const rot = -t * 0.03 * layers[0].speed;
         const a = n.angle + rot;
-        const pulse = 0.7 + 0.3 * Math.sin(t * n.speed + n.phase);
+        // 全星雲が宇宙の呼吸で一斉に膨張・収縮（位相差はわずかに残し有機的に）
+        const pulse = 0.75 + 0.35 * breath + 0.05 * Math.sin(t * n.speed + n.phase);
         const x = cx + Math.cos(a) * n.radius * baseR * layers[0].scale;
         const y = cy + Math.sin(a) * n.radius * baseR * layers[0].scale * 0.85;
         const grad = ctx.createRadialGradient(x, y, 0, x, y, n.size * pulse);
@@ -112,7 +129,9 @@ export default function CosmicBackground() {
         const x = cx + Math.cos(a) * s.radius * baseR * layer.scale;
         const y = cy + Math.sin(a) * s.radius * baseR * layer.scale * 0.85;
         const twinkle = 0.4 + 0.6 * Math.abs(Math.sin(t * s.speed + s.phase));
-        ctx.fillStyle = `hsla(${s.hue}, 80%, 80%, ${twinkle * layer.opacity})`;
+        // 個々の瞬き × 宇宙の呼吸（吸うと星々が一斉に息づく）
+        const breathGlow = 0.7 + 0.3 * breath;
+        ctx.fillStyle = `hsla(${s.hue}, 80%, 80%, ${twinkle * layer.opacity * breathGlow})`;
         ctx.beginPath();
         ctx.arc(x, y, s.r, 0, Math.PI * 2);
         ctx.fill();
