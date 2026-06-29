@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
+import { getMood } from "./cosmicMood.js";
 
 // Canvas を使用したゆっくり左回転する宇宙背景。
-// 星の瞬き、星雲の脈動、マウスによるパララックス効果を含む。
+// 星の瞬き、星雲の脈動、宇宙の呼吸、バイオリズムへの応答、マウスのパララックスを含む。
 export default function CosmicBackground() {
   const canvasRef = useRef(null);
   const mouseRef = useRef({ x: 0, y: 0 });
@@ -81,9 +82,33 @@ export default function CosmicBackground() {
       return 0.5 + 0.5 * Math.cos(((p - INHALE) / EXHALE) * Math.PI);
     };
 
+    // バイオリズムへの応答（毎フレーム目標値へ滑らかに寄せる）
+    // energy: 覚醒の高低(-1〜1) / tone: 上昇=正・内省=負(-1〜1)
+    const eased = { energy: 0, tone: 0 };
+    // 回転は累積（速度が変わっても角度が飛ばないように dt で積算）
+    let spin = 0;
+    let lastNow = startTime;
+
     const draw = (now) => {
       const t = (now - startTime) / 1000;
+      const dt = Math.min((now - lastNow) / 1000, 0.05);
+      lastNow = now;
       const breath = breathAt(t);
+
+      // 気分を滑らかに反映
+      const m = getMood();
+      const targetEnergy = m.active ? (m.awakening - 50) / 50 : 0;
+      const targetTone = m.active ? m.overall : 0;
+      eased.energy += (targetEnergy - eased.energy) * 0.015;
+      eased.tone += (targetTone - eased.tone) * 0.015;
+      const energy = eased.energy;     // 星の輝き・回転速度
+      const warm = Math.max(0, eased.tone);   // 上昇の流れ → 金の温かさ
+      const cool = Math.max(0, -eased.tone);  // 内省の流れ → 深い藍
+
+      // 覚醒が高いほど宇宙はわずかに速く巡る
+      spin += dt * (1 + energy * 0.4);
+      const brightness = 1 + energy * 0.3;
+
       ctx.clearRect(0, 0, width, height);
 
       // 背景グラデーション
@@ -91,9 +116,12 @@ export default function CosmicBackground() {
         width * 0.5, height * 0.35, 0,
         width * 0.5, height * 0.35, Math.max(width, height) * 0.8
       );
-      // 中心の明度を呼吸で揺らす（吸うと淡く満ち、吐くと深く沈む）
-      const coreL = 18 + breath * 9; // 18%〜27%
-      bg.addColorStop(0, `hsl(252, 45%, ${coreL}%)`);
+      // 中心の明度を呼吸で揺らし、気分で色相を傾ける
+      // 上昇(warm)→やや暖かい紫金へ・明るく / 内省(cool)→深い藍へ・静かに
+      const coreL = 18 + breath * 9 + energy * 5;        // 明度
+      const coreHue = 252 - warm * 24 + cool * 8;        // 252(紫) → 金寄り/藍寄り
+      const coreS = 45 + warm * 15;                      // 上昇時は彩度up
+      bg.addColorStop(0, `hsl(${coreHue}, ${coreS}%, ${coreL}%)`);
       bg.addColorStop(0.5, "#0d0b22");
       bg.addColorStop(1, "#050410");
       ctx.fillStyle = bg;
@@ -106,14 +134,17 @@ export default function CosmicBackground() {
       // 星雲（左回転 = マイナス方向）
       ctx.globalCompositeOperation = "lighter";
       for (const n of nebulae) {
-        const rot = -t * 0.03 * layers[0].speed;
+        const rot = -spin * 0.03 * layers[0].speed;
         const a = n.angle + rot;
         // 全星雲が宇宙の呼吸で一斉に膨張・収縮（位相差はわずかに残し有機的に）
         const pulse = 0.75 + 0.35 * breath + 0.05 * Math.sin(t * n.speed + n.phase);
         const x = cx + Math.cos(a) * n.radius * baseR * layers[0].scale;
         const y = cy + Math.sin(a) * n.radius * baseR * layers[0].scale * 0.85;
+        // 上昇時は金(45)へ寄り、内省時は藍(215)へ深まる
+        const nHue = n.hue + warm * (45 - n.hue) * 0.5 + cool * (215 - n.hue) * 0.4;
+        const nAlpha = 0.18 * pulse * brightness;
         const grad = ctx.createRadialGradient(x, y, 0, x, y, n.size * pulse);
-        grad.addColorStop(0, `hsla(${n.hue}, 70%, 60%, ${0.18 * pulse})`);
+        grad.addColorStop(0, `hsla(${nHue}, 70%, 60%, ${nAlpha})`);
         grad.addColorStop(1, "hsla(0,0%,0%,0)");
         ctx.fillStyle = grad;
         ctx.beginPath();
@@ -124,14 +155,16 @@ export default function CosmicBackground() {
       // 星（層ごとに回転速度を変える）
       for (const s of stars) {
         const layer = layers[s.layer];
-        const rot = -t * 0.04 * layer.speed;
+        const rot = -spin * 0.04 * layer.speed;
         const a = s.angle + rot;
         const x = cx + Math.cos(a) * s.radius * baseR * layer.scale;
         const y = cy + Math.sin(a) * s.radius * baseR * layer.scale * 0.85;
         const twinkle = 0.4 + 0.6 * Math.abs(Math.sin(t * s.speed + s.phase));
-        // 個々の瞬き × 宇宙の呼吸（吸うと星々が一斉に息づく）
+        // 個々の瞬き × 宇宙の呼吸（吸うと星々が一斉に息づく）× 覚醒の輝き
         const breathGlow = 0.7 + 0.3 * breath;
-        ctx.fillStyle = `hsla(${s.hue}, 80%, 80%, ${twinkle * layer.opacity * breathGlow})`;
+        // 上昇時は星の色みが金へ寄る
+        const sHue = s.hue + warm * (45 - s.hue) * 0.4;
+        ctx.fillStyle = `hsla(${sHue}, 80%, 80%, ${twinkle * layer.opacity * breathGlow * brightness})`;
         ctx.beginPath();
         ctx.arc(x, y, s.r, 0, Math.PI * 2);
         ctx.fill();

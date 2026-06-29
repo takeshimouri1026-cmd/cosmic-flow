@@ -44,7 +44,7 @@ export default function Auth() {
           </h1>
         </div>
 
-        <div className="bg-white/5 rounded-2xl p-8 border border-amber-200/10 space-y-4">
+        <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-8 border border-white/10 shadow-[0_0_50px_rgba(120,110,200,0.08)] space-y-4">
           {/* Google */}
           <button
             onClick={handleGoogle}

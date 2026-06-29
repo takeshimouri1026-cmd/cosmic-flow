@@ -5,6 +5,7 @@ import {
 } from "recharts";
 import { weekData, biorhythmAt, overallEnergy, awakeningScore, CYCLES } from "./biorhythm.js";
 import { supabase } from "./supabase.js";
+import { setMood } from "./cosmicMood.js";
 
 const API = import.meta.env.VITE_API_URL || "";
 
@@ -67,7 +68,10 @@ export default function App({ session }) {
     const birthDate = new Date(birth);
     const week = weekData(birthDate, today);
     const b = biorhythmAt(birthDate, today);
-    setData({ week, awakening: awakeningScore(b), overall: overallEnergy(b) });
+    const aw = awakeningScore(b);
+    const ov = overallEnergy(b);
+    setData({ week, awakening: aw, overall: ov });
+    setMood({ awakening: aw, overall: ov, active: true }); // 宇宙がこの人のリズムで脈打つ
     setAdvice(null);
     setAnalysis(null);
   }
@@ -147,7 +151,7 @@ export default function App({ session }) {
       </header>
 
       {/* プロフィール入力 */}
-      <div className="max-w-3xl mx-auto bg-white/5 backdrop-blur rounded-2xl p-6 border border-amber-200/10">
+      <div className="max-w-3xl mx-auto bg-white/[0.04] backdrop-blur-md rounded-2xl p-6 border border-white/10 shadow-[0_0_50px_rgba(120,110,200,0.08)]">
         <div className="flex flex-col md:flex-row gap-4 items-end">
           <label className="flex-1 w-full">
             <span className="text-xs text-stone-400">お名前(任意)</span>
@@ -195,7 +199,7 @@ export default function App({ session }) {
           </div>
 
           {/* グラフ */}
-          <div className="bg-white/5 rounded-2xl p-5 border border-amber-200/10">
+          <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-5 border border-white/10 shadow-[0_0_40px_rgba(120,110,200,0.06)]">
             <h2 className="font-serif text-xl mb-3">今週のバイオリズム</h2>
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={data.week}>
@@ -242,7 +246,7 @@ export default function App({ session }) {
           )}
 
           {/* ふりかえりログ入力 */}
-          <div className="bg-white/5 rounded-2xl p-5 border border-amber-200/10 space-y-3">
+          <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-5 border border-white/10 shadow-[0_0_40px_rgba(120,110,200,0.06)] space-y-3">
             <h2 className="font-serif text-xl text-amber-200">週のふりかえりを記録する</h2>
             <div className="flex gap-3 items-center">
               <span className="text-xs text-stone-400 whitespace-nowrap">記録日</span>
@@ -267,7 +271,7 @@ export default function App({ session }) {
 
           {/* 過去ログ一覧 */}
           {logs.length > 0 && (
-            <div className="bg-white/5 rounded-2xl p-5 border border-amber-200/10 space-y-3">
+            <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-5 border border-white/10 shadow-[0_0_40px_rgba(120,110,200,0.06)] space-y-3">
               <div className="flex justify-between items-center">
                 <h2 className="font-serif text-xl text-amber-200">過去のふりかえりログ</h2>
                 <button onClick={() => setShowLogs(!showLogs)} className="text-xs text-stone-400 hover:text-stone-200 transition">
@@ -316,7 +320,7 @@ export default function App({ session }) {
 
 function Stat({ label, value, sub }) {
   return (
-    <div className="bg-white/5 rounded-2xl p-5 border border-amber-200/10">
+    <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-5 border border-white/10 shadow-[0_0_40px_rgba(120,110,200,0.06)]">
       <p className="text-xs text-stone-400">{label}</p>
       <p className="font-serif text-2xl mt-1 text-amber-200">{value}</p>
       <p className="text-xs text-stone-500 mt-1">{sub}</p>
@@ -326,7 +330,7 @@ function Stat({ label, value, sub }) {
 
 function Card({ title, body, highlight }) {
   return (
-    <div className={`rounded-2xl p-5 border ${highlight ? "bg-amber-300/10 border-amber-300/30" : "bg-white/5 border-amber-200/10"}`}>
+    <div className={`rounded-2xl p-5 border backdrop-blur-md shadow-[0_0_40px_rgba(120,110,200,0.06)] ${highlight ? "bg-amber-300/10 border-amber-300/30" : "bg-white/[0.04] border-white/10"}`}>
       <h3 className="font-serif text-lg text-amber-200 mb-2">{title}</h3>
       <p className="text-stone-200 leading-relaxed text-sm whitespace-pre-line">{body}</p>
     </div>
