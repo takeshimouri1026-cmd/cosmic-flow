@@ -20,9 +20,12 @@ export default function CosmicBackground() {
       mouseRef.current.y = (e.clientY / window.innerHeight) * 2 - 1;
     };
 
+    // スマホ(狭い画面)では背景をやや暗くして白文字の可読性を保つ
+    let dim = 1;
     const resize = () => {
       width = canvas.width = window.innerWidth;
       height = canvas.height = window.innerHeight;
+      dim = width < 768 ? 0.72 : 1;
     };
     resize();
     window.addEventListener("resize", resize);
@@ -118,7 +121,7 @@ export default function CosmicBackground() {
       );
       // 中心の明度を呼吸で揺らし、気分で色相を傾ける
       // 上昇(warm)→やや暖かい紫金へ・明るく / 内省(cool)→深い藍へ・静かに
-      const coreL = 18 + breath * 9 + energy * 5;        // 明度
+      const coreL = (18 + breath * 9 + energy * 5) * dim;        // 明度（スマホは暗め）
       const coreHue = 252 - warm * 24 + cool * 8;        // 252(紫) → 金寄り/藍寄り
       const coreS = 45 + warm * 15;                      // 上昇時は彩度up
       bg.addColorStop(0, `hsl(${coreHue}, ${coreS}%, ${coreL}%)`);
@@ -142,7 +145,7 @@ export default function CosmicBackground() {
         const y = cy + Math.sin(a) * n.radius * baseR * layers[0].scale * 0.85;
         // 上昇時は金(45)へ寄り、内省時は藍(215)へ深まる
         const nHue = n.hue + warm * (45 - n.hue) * 0.5 + cool * (215 - n.hue) * 0.4;
-        const nAlpha = 0.18 * pulse * brightness;
+        const nAlpha = 0.18 * pulse * brightness * dim;
         const grad = ctx.createRadialGradient(x, y, 0, x, y, n.size * pulse);
         grad.addColorStop(0, `hsla(${nHue}, 70%, 60%, ${nAlpha})`);
         grad.addColorStop(1, "hsla(0,0%,0%,0)");
@@ -164,7 +167,7 @@ export default function CosmicBackground() {
         const breathGlow = 0.7 + 0.3 * breath;
         // 上昇時は星の色みが金へ寄る
         const sHue = s.hue + warm * (45 - s.hue) * 0.4;
-        ctx.fillStyle = `hsla(${sHue}, 80%, 80%, ${twinkle * layer.opacity * breathGlow * brightness})`;
+        ctx.fillStyle = `hsla(${sHue}, 80%, 80%, ${twinkle * layer.opacity * breathGlow * brightness * dim})`;
         ctx.beginPath();
         ctx.arc(x, y, s.r, 0, Math.PI * 2);
         ctx.fill();
