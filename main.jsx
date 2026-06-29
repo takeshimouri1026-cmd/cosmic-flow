@@ -15,11 +15,15 @@ function Root() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (session === undefined) return <CosmicBackground />;
   return (
     <>
       <CosmicBackground />
-      {session ? <App session={session} /> : <Auth />}
+      {/* 画面下部の暗いスクリム：背景の光に文字が負けないようにする */}
+      <div
+        className="fixed bottom-0 left-0 right-0 -z-[5] pointer-events-none"
+        style={{ height: "32vh", background: "linear-gradient(to top, #050410 0%, rgba(5,4,16,0.6) 45%, transparent 100%)" }}
+      />
+      {session === undefined ? null : session ? <App session={session} /> : <Auth />}
     </>
   );
 }
