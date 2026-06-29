@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import Auth from "./Auth.jsx";
+import CosmicBackground from "./CosmicBackground.jsx";
 import { supabase } from "./supabase.js";
 import "./index.css";
 
@@ -14,8 +15,13 @@ function Root() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (session === undefined) return null;
-  return session ? <App session={session} /> : <Auth />;
+  if (session === undefined) return <CosmicBackground />;
+  return (
+    <>
+      <CosmicBackground />
+      {session ? <App session={session} /> : <Auth />}
+    </>
+  );
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(
