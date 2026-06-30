@@ -6,6 +6,7 @@ import {
 import { weekData, biorhythmAt, overallEnergy, awakeningScore, CYCLES } from "./biorhythm.js";
 import { supabase } from "./supabase.js";
 import { setMood } from "./cosmicMood.js";
+import { computeNatal, PREFECTURES } from "./natal.js";
 
 const API = import.meta.env.VITE_API_URL || "";
 
@@ -15,9 +16,12 @@ export default function App({ session }) {
   const [profile, setProfile] = useState(null);
   const [name, setName] = useState("");
   const [birth, setBirth] = useState("");
+  const [birthTime, setBirthTime] = useState("");
+  const [birthPlace, setBirthPlace] = useState("");
   const [profileSaved, setProfileSaved] = useState(false);
 
   const [data, setData] = useState(null);
+  const [natal, setNatal] = useState(null);
   const [advice, setAdvice] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -42,6 +46,8 @@ export default function App({ session }) {
           setProfile(data);
           setName(data.name || "");
           setBirth(data.birth_date || "");
+          setBirthTime(data.birth_time ? data.birth_time.slice(0, 5) : "");
+          setBirthPlace(data.birth_place || "");
         }
       });
     loadLogs();
@@ -56,7 +62,10 @@ export default function App({ session }) {
 
   // プロフィール保存
   async function saveProfile() {
-    await supabase.from("profiles").upsert({ id: userId, name, birth_date: birth });
+    await supabase.from("profiles").upsert({
+      id: userId, name, birth_date: birth,
+      birth_time: birthTime || null, birth_place: birthPlace || null,
+    });
     setProfileSaved(true);
     setTimeout(() => setProfileSaved(false), 2000);
   }
@@ -72,6 +81,12 @@ export default function App({ session }) {
     const ov = overallEnergy(b);
     setData({ week, awakening: aw, overall: ov });
     setMood({ awakening: aw, overall: ov, active: true }); // 宇宙がこの人のリズムで脈打つ
+    // 出生図(ネイタル)を算出。失敗してもアプリは止めない
+    try {
+      setNatal(computeNatal(birth, birthTime, birthPlace));
+    } catch {
+      setNatal(null);
+    }
     setAdvice(null);
     setAnalysis(null);
   }
@@ -83,7 +98,7 @@ export default function App({ session }) {
       const r = await fetch(`${API}/api/advice`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, name }),
+        body: JSON.stringify({ ...data, name, natal: natal?.summary }),
       });
       const j = await r.json();
       if (j.error) throw new Error(j.error);
@@ -124,7 +139,7 @@ export default function App({ session }) {
       const r = await fetch(`${API}/api/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, name, logs: logs.map(l => ({ date: l.log_date, text: l.text })) }),
+        body: JSON.stringify({ ...data, name, natal: natal?.summary, logs: logs.map(l => ({ date: l.log_date, text: l.text })) }),
       });
       const j = await r.json();
       if (j.error) throw new Error(j.error);
@@ -156,26 +171,52 @@ export default function App({ session }) {
 
       {/* プロフィール入力 */}
       <div className="max-w-3xl mx-auto bg-white/[0.04] backdrop-blur-md rounded-2xl p-6 border border-white/10 shadow-[0_0_50px_rgba(120,110,200,0.08)]">
-        <div className="flex flex-col md:flex-row gap-4 items-end">
-          <label className="flex-1 w-full">
-            <span className="text-xs text-stone-400">お名前(任意)</span>
-            <input
-              className="mt-1 w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="例: 威之"
-            />
-          </label>
-          <label className="flex-1 w-full">
-            <span className="text-xs text-stone-400">生年月日</span>
-            <input
-              type="date"
-              className="mt-1 w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
-              value={birth}
-              onChange={(e) => setBirth(e.target.value)}
-            />
-          </label>
-          <div className="flex gap-2">
+        <div className="space-y-4">
+          <div className="flex flex-col md:flex-row gap-4">
+            <label className="flex-1 w-full">
+              <span className="text-xs text-stone-400">お名前(任意)</span>
+              <input
+                className="mt-1 w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="例: 威之"
+              />
+            </label>
+            <label className="flex-1 w-full">
+              <span className="text-xs text-stone-400">生年月日</span>
+              <input
+                type="date"
+                className="mt-1 w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
+                value={birth}
+                onChange={(e) => setBirth(e.target.value)}
+              />
+            </label>
+          </div>
+          <div className="flex flex-col md:flex-row gap-4">
+            <label className="flex-1 w-full">
+              <span className="text-xs text-stone-400">出生時刻(任意・占星術の精度が上がります)</span>
+              <input
+                type="time"
+                className="mt-1 w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
+                value={birthTime}
+                onChange={(e) => setBirthTime(e.target.value)}
+              />
+            </label>
+            <label className="flex-1 w-full">
+              <span className="text-xs text-stone-400">出生地(任意)</span>
+              <select
+                className="mt-1 w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
+                value={birthPlace}
+                onChange={(e) => setBirthPlace(e.target.value)}
+              >
+                <option value="">選択しない</option>
+                {Object.keys(PREFECTURES).map((p) => (
+                  <option key={p} value={p} className="bg-stone-900">{p}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex gap-2 justify-end">
             <button
               onClick={saveProfile}
               className="bg-white/10 text-stone-200 font-medium rounded-lg px-4 py-2 hover:bg-white/20 transition whitespace-nowrap text-sm"
@@ -201,6 +242,30 @@ export default function App({ session }) {
             <Stat label="今週の総合エネルギー" value={data.overall > 0 ? "上昇の流れ" : "内省の流れ"} sub={`指数 ${Math.round(data.overall * 100)}`} />
             <Stat label="覚醒スコア" value={`${data.awakening} / 100`} sub={data.awakening > 60 ? "波長が整いやすい" : "静けさが鍵"} />
           </div>
+
+          {/* ネイタル(出生図) */}
+          {natal && (
+            <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-5 border border-white/10 shadow-[0_0_40px_rgba(120,110,200,0.06)]">
+              <h2 className="font-serif text-xl text-amber-200 mb-3">あなたの星の配置</h2>
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <NatalSign label="太陽" sign={natal.sun} hint="本質・意志" />
+                <NatalSign label="月" sign={natal.moon} hint="感情・内面" />
+                <NatalSign label="上昇宮" sign={natal.ascendant || "—"} hint={natal.ascendant ? "印象・生き方" : "出生時刻が必要"} />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {natal.bodies.map((b) => (
+                  <span key={b.name} className="text-xs text-stone-300 bg-black/20 rounded-full px-3 py-1 border border-white/5">
+                    {b.name} <span className="text-amber-200/80">{b.sign}</span>
+                  </span>
+                ))}
+              </div>
+              {(!natal.hasTime || !natal.hasPlace) && (
+                <p className="text-xs text-stone-500 mt-3">
+                  {!natal.hasTime && "出生時刻"}{!natal.hasTime && !natal.hasPlace && "・"}{!natal.hasPlace && "出生地"}を入力すると、より正確な配置が読み取れます。
+                </p>
+              )}
+            </div>
+          )}
 
           {/* グラフ */}
           <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-5 border border-white/10 shadow-[0_0_40px_rgba(120,110,200,0.06)]">
@@ -336,6 +401,16 @@ function Stat({ label, value, sub }) {
       <p className="text-xs text-stone-400">{label}</p>
       <p className="font-serif text-2xl mt-1 text-amber-200">{value}</p>
       <p className="text-xs text-stone-500 mt-1">{sub}</p>
+    </div>
+  );
+}
+
+function NatalSign({ label, sign, hint }) {
+  return (
+    <div className="bg-black/20 rounded-xl p-3 border border-white/5 text-center">
+      <p className="text-xs text-stone-400">{label}</p>
+      <p className="font-serif text-lg text-amber-200 mt-1">{sign}{sign !== "—" ? "座" : ""}</p>
+      <p className="text-[10px] text-stone-500 mt-0.5">{hint}</p>
     </div>
   );
 }

@@ -34,7 +34,7 @@ function extractJSON(text) {
 
 // 今週のアドバイスを生成
 app.post("/api/advice", async (req, res) => {
-  const { week, awakening, overall, name } = req.body;
+  const { week, awakening, overall, name, natal } = req.body;
 
   // バイオリズム数値を文章化してモデルに渡す
   const summary = week
@@ -44,13 +44,17 @@ app.post("/api/advice", async (req, res) => {
     )
     .join("\n");
 
-  const prompt = `あなたは宇宙のエネルギーの流れとバイオリズムを読み解くスピリチュアルなガイドです。
+  const natalBlock = natal
+    ? `\n\n■ ${name || "相談者"}さんの出生図(ネイタル):\n${natal}\nこの星の配置(生まれ持った性質)も踏まえ、今週の過ごし方に自然に織り込んでください。`
+    : "";
+
+  const prompt = `あなたは宇宙のエネルギーの流れ・バイオリズム・西洋占星術を読み解くスピリチュアルなガイドです。
 以下は${name || "相談者"}さんの今週のバイオリズム数値(-100〜100)です。
 
 ${summary}
 
 今週の総合エネルギー傾向: ${overall > 0 ? "上昇" : "内省"}
-覚醒スコア: ${awakening}/100
+覚醒スコア: ${awakening}/100${natalBlock}
 
 この数値を宇宙のエネルギーの流れとして解釈し、以下を日本語で答えてください。
 ただし占いを断定的な予言にせず、あくまで「こう過ごすと整いやすい」という提案にとどめてください。
@@ -83,7 +87,7 @@ ${summary}
 
 // 過去ログ × バイオリズム 深掘り分析
 app.post("/api/analyze", async (req, res) => {
-  const { week, awakening, overall, name, logs } = req.body;
+  const { week, awakening, overall, name, logs, natal } = req.body;
 
   const summary = week
     .map(
@@ -97,18 +101,21 @@ app.post("/api/analyze", async (req, res) => {
     .map((l) => `【${l.date}】\n${l.text}`)
     .join("\n\n");
 
-  const prompt = `あなたは宇宙のエネルギーの流れとバイオリズムを読み解くスピリチュアルなガイドです。
+  const natalBlock = natal ? `\n■ 出生図(ネイタル・生まれ持った性質):\n${natal}\n` : "";
+
+  const prompt = `あなたは宇宙のエネルギーの流れ・バイオリズム・西洋占星術を読み解くスピリチュアルなガイドです。
 以下は${name || "相談者"}さんの情報です。
 
 ■ 今週のバイオリズム数値(-100〜100):
 ${summary}
 今週の総合エネルギー傾向: ${overall > 0 ? "上昇" : "内省"}
 覚醒スコア: ${awakening}/100
-
+${natalBlock}
 ■ 過去のふりかえりログ(新しい順):
 ${logSummary}
 
-上記のバイオリズムデータと過去のログを総合的に分析し、以下を日本語で答えてください。
+上記のバイオリズム・出生図・過去のログを総合的に分析し、以下を日本語で答えてください。
+出生図の性質と、ログに現れた実際の体験を結びつけると、より深い洞察になります。
 ログに書かれた実際の体験・感情・出来事をバイオリズムと照らし合わせ、具体的で個人的な洞察を提供してください。
 断定的な予言は避け、「〜の傾向があります」「〜すると整いやすいかもしれません」という表現にとどめてください。
 
