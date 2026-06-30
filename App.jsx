@@ -246,12 +246,32 @@ export default function App({ session }) {
           {/* ネイタル(出生図) */}
           {natal && (
             <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-5 border border-white/10 shadow-[0_0_40px_rgba(120,110,200,0.06)]">
-              <h2 className="font-serif text-xl text-amber-200 mb-3">あなたの星の配置</h2>
+              <h2 className="font-serif text-xl text-amber-200 mb-1">あなたの星の配置</h2>
+              <p className="text-xs text-stone-400 mb-4 leading-relaxed">
+                生まれた瞬間、空のどこにどの星があったか——それがあなたの「生まれ持った性質」を映します。
+                とくに大切なのが次の3つです。
+              </p>
               <div className="grid grid-cols-3 gap-3 mb-3">
-                <NatalSign label="太陽" sign={natal.sun} hint="本質・意志" />
-                <NatalSign label="月" sign={natal.moon} hint="感情・内面" />
-                <NatalSign label="上昇宮" sign={natal.ascendant || "—"} hint={natal.ascendant ? "印象・生き方" : "出生時刻が必要"} />
+                <NatalSign label="太陽 ☀" sign={natal.sun} hint="本質・意志" />
+                <NatalSign label="月 ☽" sign={natal.moon} hint="感情・内面" />
+                <NatalSign label="上昇宮 ↑" sign={natal.ascendant || "—"} hint={natal.ascendant ? "第一印象・生き方" : "出生時刻が必要"} />
               </div>
+
+              <div className="bg-black/20 rounded-xl p-4 border border-white/5 text-xs text-stone-300 leading-relaxed space-y-1.5 mb-4">
+                <p><span className="text-amber-200">太陽（{natal.sun}）</span>＝あなたの core。意志・目指す方向・人生の主題を表します。</p>
+                <p><span className="text-amber-200">月（{natal.moon}）</span>＝素の自分。安心する条件や、感情がどう動くかを表します。</p>
+                <p>
+                  <span className="text-amber-200">上昇宮{natal.ascendant ? `（${natal.ascendant}）` : ""}</span>
+                  ＝他人から見える第一印象・生き方の雰囲気。
+                  {natal.ascendant ? "" : "出生時刻を入れると算出されます。"}
+                </p>
+                <p className="text-stone-500 pt-1">
+                  下の惑星（水星=思考、金星=愛・好み、火星=行動力…）は、より細かな性質の彩りです。
+                  ※これは「決まった運命」ではなく、自分を見つめ直すための鏡としてご覧ください。
+                </p>
+              </div>
+
+              <p className="text-xs text-stone-500 mb-2">すべての天体</p>
               <div className="flex flex-wrap gap-2">
                 {natal.bodies.map((b) => (
                   <span key={b.name} className="text-xs text-stone-300 bg-black/20 rounded-full px-3 py-1 border border-white/5">
@@ -409,7 +429,7 @@ function NatalSign({ label, sign, hint }) {
   return (
     <div className="bg-black/20 rounded-xl p-3 border border-white/5 text-center">
       <p className="text-xs text-stone-400">{label}</p>
-      <p className="font-serif text-lg text-amber-200 mt-1">{sign}{sign !== "—" ? "座" : ""}</p>
+      <p className="font-serif text-lg text-amber-200 mt-1">{sign}</p>
       <p className="text-[10px] text-stone-500 mt-0.5">{hint}</p>
     </div>
   );
