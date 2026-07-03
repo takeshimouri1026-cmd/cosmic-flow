@@ -34,7 +34,7 @@ function extractJSON(text) {
 
 // 今週のアドバイスを生成
 app.post("/api/advice", async (req, res) => {
-  const { week, awakening, overall, name, natal } = req.body;
+  const { week, awakening, overall, name, natal, transit, sky, recentLogs } = req.body;
 
   // バイオリズム数値を文章化してモデルに渡す
   const summary = week
@@ -45,7 +45,12 @@ app.post("/api/advice", async (req, res) => {
     .join("\n");
 
   const natalBlock = natal
-    ? `\n\n■ ${name || "相談者"}さんの出生図(ネイタル):\n${natal}\nこの星の配置(生まれ持った性質)も踏まえ、今週の過ごし方に自然に織り込んでください。`
+    ? `\n\n■ ${name || "相談者"}さんの出生図(ネイタル):\n${natal}\nこの星の配置(生まれ持った性質)も踏まえてください。`
+    : "";
+  const transitBlock = transit ? `\n\n■ 今のトランジット(空の天体があなたの出生図に触れていること):\n${transit}\nこれは「今の人生のテーマ」として自然に織り込んでください。` : "";
+  const skyBlock = sky ? `\n\n■ 今この瞬間の空:\n${sky}\n月のリズムや近づく宇宙イベントのエネルギーも、過ごし方の助言にそっと反映してください。` : "";
+  const logBlock = recentLogs && recentLogs.length
+    ? `\n\n■ ${name || "相談者"}さんの最近の記録:\n${recentLogs.map((l) => `【${l.date}】${l.text}`).join("\n")}\nこの人の実際の言葉に触れ、寄り添った助言にしてください。`
     : "";
 
   const prompt = `あなたは宇宙のエネルギーの流れ・バイオリズム・西洋占星術を読み解くスピリチュアルなガイドです。
@@ -54,9 +59,9 @@ app.post("/api/advice", async (req, res) => {
 ${summary}
 
 今週の総合エネルギー傾向: ${overall > 0 ? "上昇" : "内省"}
-覚醒スコア: ${awakening}/100${natalBlock}
+覚醒スコア: ${awakening}/100${natalBlock}${transitBlock}${skyBlock}${logBlock}
 
-この数値を宇宙のエネルギーの流れとして解釈し、以下を日本語で答えてください。
+これらを宇宙のエネルギーの流れとして総合的に解釈し、以下を日本語で答えてください。
 ただし占いを断定的な予言にせず、あくまで「こう過ごすと整いやすい」という提案にとどめてください。
 
 必ず次のJSON形式のみで出力してください(前後の説明やマークダウン不要):
@@ -87,7 +92,7 @@ ${summary}
 
 // 過去ログ × バイオリズム 深掘り分析
 app.post("/api/analyze", async (req, res) => {
-  const { week, awakening, overall, name, logs, natal } = req.body;
+  const { week, awakening, overall, name, logs, natal, transit, sky } = req.body;
 
   const summary = week
     .map(
@@ -102,6 +107,8 @@ app.post("/api/analyze", async (req, res) => {
     .join("\n\n");
 
   const natalBlock = natal ? `\n■ 出生図(ネイタル・生まれ持った性質):\n${natal}\n` : "";
+  const transitBlock = transit ? `\n■ 今のトランジット(今の人生のテーマ):\n${transit}\n` : "";
+  const skyBlock = sky ? `\n■ 今この瞬間の空:\n${sky}\n` : "";
 
   const prompt = `あなたは宇宙のエネルギーの流れ・バイオリズム・西洋占星術を読み解くスピリチュアルなガイドです。
 以下は${name || "相談者"}さんの情報です。
@@ -110,12 +117,13 @@ app.post("/api/analyze", async (req, res) => {
 ${summary}
 今週の総合エネルギー傾向: ${overall > 0 ? "上昇" : "内省"}
 覚醒スコア: ${awakening}/100
-${natalBlock}
+${natalBlock}${transitBlock}${skyBlock}
 ■ 過去のふりかえりログ(新しい順):
 ${logSummary}
 
-上記のバイオリズム・出生図・過去のログを総合的に分析し、以下を日本語で答えてください。
-出生図の性質と、ログに現れた実際の体験を結びつけると、より深い洞察になります。
+上記のバイオリズム・出生図・今のトランジット・月のリズム・過去のログを総合的に分析し、以下を日本語で答えてください。
+出生図の性質、今空で起きているトランジット、そしてログに現れた実際の体験を結びつけると、より深い洞察になります。
+新月の頃に始めたいと書いていた/満月の頃に手放したい等、月のリズムとログの符合があれば触れてください。
 ログに書かれた実際の体験・感情・出来事をバイオリズムと照らし合わせ、具体的で個人的な洞察を提供してください。
 断定的な予言は避け、「〜の傾向があります」「〜すると整いやすいかもしれません」という表現にとどめてください。
 

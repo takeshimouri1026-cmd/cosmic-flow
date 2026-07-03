@@ -5,7 +5,8 @@
 // overall:   -1〜1（総合エネルギー。正=上昇 / 負=内省）
 // active:    波を読んだ後 true（読む前はニュートラルな宇宙）
 
-const mood = { awakening: 50, overall: 0, active: false };
+// eventProximity: 次の宇宙イベントへの接近度(0〜1)。近いほど宇宙が高揚する。
+const mood = { awakening: 50, overall: 0, active: false, eventProximity: 0 };
 
 export function setMood(next) {
   Object.assign(mood, next);

@@ -7,6 +7,7 @@ import { weekData, biorhythmAt, overallEnergy, awakeningScore, CYCLES } from "./
 import { supabase } from "./supabase.js";
 import { setMood } from "./cosmicMood.js";
 import { computeNatal, PREFECTURES } from "./natal.js";
+import { moonPhase, nextCosmicEvent, computeTransits } from "./cosmicEvents.js";
 
 const API = import.meta.env.VITE_API_URL || "";
 
@@ -23,6 +24,8 @@ export default function App({ session }) {
   const [data, setData] = useState(null);
   const [natal, setNatal] = useState(null);
   const [showNatal, setShowNatal] = useState(false);
+  const [transits, setTransits] = useState(null);
+  const [sky, setSky] = useState(null); // { moon, event } 今この瞬間の空
   const [advice, setAdvice] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -52,6 +55,17 @@ export default function App({ session }) {
         }
       });
     loadLogs();
+    // 今この瞬間の空(月相・次の宇宙イベント)を計算
+    try {
+      const moon = moonPhase(new Date());
+      const event = nextCosmicEvent(new Date());
+      setSky({ moon, event });
+      // イベントが近いほど背景の呼吸・輝きを高める(0〜1)
+      if (event) {
+        const proximity = Math.max(0, Math.min(1, (7 - event.daysUntil) / 7));
+        setMood({ eventProximity: proximity });
+      }
+    } catch { /* 計算失敗時は空表示なし */ }
   }, []);
 
   // ログ読み込み
@@ -71,6 +85,17 @@ export default function App({ session }) {
     setTimeout(() => setProfileSaved(false), 2000);
   }
 
+  // 今の空(月相・次イベント)をモデルへ渡す短い要約
+  function skySummary() {
+    if (!sky) return undefined;
+    let s = `今の月: ${sky.moon.name}(${sky.moon.moonSign})— ${sky.moon.theme}`;
+    if (sky.event) {
+      s += `\n次の宇宙イベント: ${sky.event.name}(あと${sky.event.daysUntil}日)— ${sky.event.theme}`;
+      if (sky.event.daysUntil <= 1) s += "（まさに今日〜明日、この宇宙のエネルギーが高まっています）";
+    }
+    return s;
+  }
+
   // バイオリズム計算
   function analyze() {
     if (!birth) { setError("生年月日を入力してください。"); return; }
@@ -83,10 +108,18 @@ export default function App({ session }) {
     setData({ week, awakening: aw, overall: ov });
     setMood({ awakening: aw, overall: ov, active: true }); // 宇宙がこの人のリズムで脈打つ
     // 出生図(ネイタル)を算出。失敗してもアプリは止めない
+    let n = null;
     try {
-      setNatal(computeNatal(birth, birthTime, birthPlace));
+      n = computeNatal(birth, birthTime, birthPlace);
+      setNatal(n);
     } catch {
       setNatal(null);
+    }
+    // トランジット(今日の天体 × 出生図)
+    try {
+      setTransits(computeTransits(birth, birthTime, n?.coords));
+    } catch {
+      setTransits(null);
     }
     setShowNatal(false); // 星の配置は既定で折りたたむ（見たい時に開く）
     setAdvice(null);
@@ -100,7 +133,13 @@ export default function App({ session }) {
       const r = await fetch(`${API}/api/advice`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, name, natal: natal?.summary }),
+        body: JSON.stringify({
+          ...data, name,
+          natal: natal?.summary,
+          transit: transits?.summary,
+          sky: skySummary(),
+          recentLogs: logs.slice(0, 3).map((l) => ({ date: l.log_date, text: l.text })),
+        }),
       });
       const j = await r.json();
       if (j.error) throw new Error(j.error);
@@ -141,7 +180,7 @@ export default function App({ session }) {
       const r = await fetch(`${API}/api/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, name, natal: natal?.summary, logs: logs.map(l => ({ date: l.log_date, text: l.text })) }),
+        body: JSON.stringify({ ...data, name, natal: natal?.summary, transit: transits?.summary, sky: skySummary(), logs: logs.map(l => ({ date: l.log_date, text: l.text })) }),
       });
       const j = await r.json();
       if (j.error) throw new Error(j.error);
@@ -170,6 +209,35 @@ export default function App({ session }) {
           生年月日からバイオリズムと覚醒の波を読み解き、今週の過ごし方を提案します。
         </p>
       </header>
+
+      {/* 今この瞬間の空（月相・次の宇宙イベント）*/}
+      {sky && (
+        <div className="max-w-3xl mx-auto mb-6 flex flex-col sm:flex-row gap-3">
+          <div className="flex-1 bg-white/[0.04] backdrop-blur-md rounded-2xl px-5 py-4 border border-white/10 flex items-center gap-3">
+            <span className="text-3xl">{sky.moon.emoji}</span>
+            <div>
+              <p className="text-xs text-stone-400">今の月</p>
+              <p className="text-amber-200 font-serif">{sky.moon.name}・{sky.moon.moonSign}</p>
+              <p className="text-[11px] text-stone-500">{sky.moon.theme}</p>
+            </div>
+          </div>
+          {sky.event && (
+            <div className="flex-1 bg-white/[0.04] backdrop-blur-md rounded-2xl px-5 py-4 border border-white/10 flex items-center gap-3">
+              <span className="text-3xl">{sky.event.emoji}</span>
+              <div>
+                <p className="text-xs text-stone-400">
+                  次の宇宙イベント
+                  {sky.event.daysUntil <= 0 ? "・今日" : `・あと${sky.event.daysUntil}日`}
+                </p>
+                <p className="text-amber-200 font-serif">{sky.event.name}</p>
+                <p className="text-[11px] text-stone-500">
+                  {sky.event.theme}{sky.event.symbolic ? "（と言われています）" : ""}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* プロフィール入力 */}
       <div className="max-w-3xl mx-auto bg-white/[0.04] backdrop-blur-md rounded-2xl p-6 border border-white/10 shadow-[0_0_50px_rgba(120,110,200,0.08)]">
@@ -307,6 +375,26 @@ export default function App({ session }) {
               )}
               </div>
               )}
+            </div>
+          )}
+
+          {/* トランジット(今の天体 × 出生図) */}
+          {transits && (transits.hits.length > 0 || transits.mercuryRetrograde) && (
+            <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-5 border border-white/10 shadow-[0_0_40px_rgba(120,110,200,0.06)]">
+              <h2 className="font-serif text-xl text-amber-200 mb-1">いま宇宙があなたに触れていること</h2>
+              <p className="text-xs text-stone-400 mb-3 leading-relaxed">
+                空を動く天体が、あなたの生まれ持った星に重なる時期です。今の人生のテーマとして響きます。
+              </p>
+              <div className="space-y-2">
+                {transits.hits.map((h, i) => (
+                  <p key={i} className="text-sm text-stone-200 bg-black/20 rounded-lg px-3 py-2 border border-white/5">✦ {h}</p>
+                ))}
+                {transits.mercuryRetrograde && (
+                  <p className="text-sm text-amber-100/90 bg-amber-300/5 rounded-lg px-3 py-2 border border-amber-300/20">
+                    ☿ 現在は水星逆行中——見直し・再確認・再会に向く時期です。
+                  </p>
+                )}
+              </div>
             </div>
           )}
 

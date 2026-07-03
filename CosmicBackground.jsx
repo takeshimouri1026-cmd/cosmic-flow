@@ -87,7 +87,7 @@ export default function CosmicBackground() {
 
     // バイオリズムへの応答（毎フレーム目標値へ滑らかに寄せる）
     // energy: 覚醒の高低(-1〜1) / tone: 上昇=正・内省=負(-1〜1)
-    const eased = { energy: 0, tone: 0 };
+    const eased = { energy: 0, tone: 0, proximity: 0 };
     // 回転は累積（速度が変わっても角度が飛ばないように dt で積算）
     let spin = 0;
     let lastNow = startTime;
@@ -104,13 +104,16 @@ export default function CosmicBackground() {
       const targetTone = m.active ? m.overall : 0;
       eased.energy += (targetEnergy - eased.energy) * 0.015;
       eased.tone += (targetTone - eased.tone) * 0.015;
+      eased.proximity += ((m.eventProximity || 0) - eased.proximity) * 0.01;
       const energy = eased.energy;     // 星の輝き・回転速度
       const warm = Math.max(0, eased.tone);   // 上昇の流れ → 金の温かさ
       const cool = Math.max(0, -eased.tone);  // 内省の流れ → 深い藍
+      const prox = eased.proximity;    // 宇宙イベント接近度
 
       // 覚醒が高いほど宇宙はわずかに速く巡る
       spin += dt * (1 + energy * 0.4);
-      const brightness = 1 + energy * 0.3;
+      // イベントが近いほど全体がわずかに高揚(輝き増)
+      const brightness = (1 + energy * 0.3) * (1 + prox * 0.25);
 
       ctx.clearRect(0, 0, width, height);
 

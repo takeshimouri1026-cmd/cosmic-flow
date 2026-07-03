@@ -65,5 +65,5 @@ export function computeNatal(birthDate, birthTime, prefecture) {
   if (!hasTime) summary += "\n(出生時刻が未入力のため、月星座は前後する可能性・アセンダント/ハウスは未算出)";
   if (!hasPlace) summary += "\n(出生地が未入力のため、東京を仮定して算出)";
 
-  return { hasTime, hasPlace, sun, moon, ascendant, bodies, summary };
+  return { hasTime, hasPlace, sun, moon, ascendant, bodies, summary, coords: [lat, lon] };
 }
