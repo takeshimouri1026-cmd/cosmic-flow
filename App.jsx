@@ -35,6 +35,8 @@ export default function App({ session }) {
   const [logDate, setLogDate] = useState(toISODate(new Date()));
   const [logSaved, setLogSaved] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
+  const [echo, setEcho] = useState(null); // 宇宙の返歌
+  const [readings, setReadings] = useState([]); // これまでの物語(章)
 
   const [analysis, setAnalysis] = useState(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
@@ -55,6 +57,7 @@ export default function App({ session }) {
         }
       });
     loadLogs();
+    loadReadings();
     // 今この瞬間の空(月相・次の宇宙イベント)を計算
     try {
       const moon = moonPhase(new Date());
@@ -67,6 +70,13 @@ export default function App({ session }) {
       }
     } catch { /* 計算失敗時は空表示なし */ }
   }, []);
+
+  // これまでの物語(章)を読み込み
+  async function loadReadings() {
+    const { data } = await supabase.from("readings").select("*")
+      .eq("user_id", userId).order("chapter", { ascending: true });
+    if (data) setReadings(data);
+  }
 
   // ログ読み込み
   async function loadLogs() {
@@ -138,20 +148,49 @@ export default function App({ session }) {
           natal: natal?.summary,
           transit: transits?.summary,
           sky: skySummary(),
+          // 直近5章の要約を渡し「物語の続き」として紡いでもらう
+          history: readings.slice(-5).map((r) => ({
+            chapter: r.chapter, title: r.title, summary: r.summary,
+            date: new Date(r.created_at).toLocaleDateString("ja-JP"),
+          })),
         }),
       });
       const j = await r.json();
       if (j.error) throw new Error(j.error);
-      setAdvice(j);
+      const chapter = readings.length + 1;
+      setAdvice({ ...j, chapter });
+      // この章を物語として記録(次回の続きの材料になる)
+      if (j.story_summary) {
+        await supabase.from("readings").insert({
+          user_id: userId, chapter,
+          title: j.chapter_title || `第${chapter}章`,
+          summary: j.story_summary,
+        });
+        loadReadings();
+      }
     } catch (e) {
       setError(e.message || "通信に失敗しました。");
     } finally { setLoading(false); }
+  }
+
+  // 宇宙の返歌を受け取る(演出。失敗しても静かに無視)
+  async function fetchEcho(text) {
+    try {
+      const r = await fetch(`${API}/api/echo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, sky: sky ? `${sky.moon.name}(${sky.moon.moonSign})` : undefined }),
+      });
+      const j = await r.json();
+      if (j.echo) setEcho(j.echo);
+    } catch { /* 返歌は無くても成立する */ }
   }
 
   // ログ保存
   async function handleSaveLog() {
     if (!logText.trim()) return;
     setError("");
+    const savedText = logText.trim();
     const { error } = await supabase.from("logs").insert(
       { user_id: userId, log_date: logDate, text: logText.trim() }
     );
@@ -163,6 +202,8 @@ export default function App({ session }) {
     setLogSaved(true);
     setTimeout(() => setLogSaved(false), 2000);
     loadLogs();
+    setEcho(null);
+    fetchEcho(savedText); // 宇宙からの返歌(非同期・待たない)
   }
 
   // ログ削除
@@ -438,6 +479,14 @@ export default function App({ session }) {
           )}
           {advice && (
             <div className="space-y-4">
+              {advice.chapter_title && (
+                <div className="text-center pt-2">
+                  <p className="text-xs text-stone-500 tracking-[0.3em]">あなたの宇宙の物語</p>
+                  <p className="font-serif text-2xl text-amber-200 mt-1">
+                    第{advice.chapter}章「{advice.chapter_title}」
+                  </p>
+                </div>
+              )}
               <Card title="今週の流れ" body={advice.flow} />
               <Card title="調子が良い日と過ごし方" body={advice.best_days} />
               <Card title="無理を避けたい日とケア" body={advice.care_days} />
@@ -469,6 +518,11 @@ export default function App({ session }) {
                 保存する
               </button>
             </div>
+            {echo && (
+              <p className="text-center font-serif text-amber-100/80 text-sm pt-2 pb-1 animate-[fadeIn_2s_ease]">
+                ✨ {echo}
+              </p>
+            )}
           </div>
 
           {/* 過去ログ一覧 */}

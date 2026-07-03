@@ -10,3 +10,9 @@ body {
 .font-serif {
   font-family: "Hiragino Mincho ProN", "Yu Mincho", Georgia, serif;
 }
+
+/* 宇宙の返歌がゆっくり浮かび上がる */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}

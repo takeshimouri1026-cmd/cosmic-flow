@@ -34,7 +34,7 @@ function extractJSON(text) {
 
 // 今週のアドバイスを生成
 app.post("/api/advice", async (req, res) => {
-  const { week, awakening, overall, name, natal, transit, sky } = req.body;
+  const { week, awakening, overall, name, natal, transit, sky, history } = req.body;
 
   // バイオリズム数値を文章化してモデルに渡す
   const summary = week
@@ -50,24 +50,35 @@ app.post("/api/advice", async (req, res) => {
   const transitBlock = transit ? `\n\n■ 今のトランジット(空の天体があなたの出生図に触れていること):\n${transit}\nこれは「今の人生のテーマ」として自然に織り込んでください。` : "";
   const skyBlock = sky ? `\n\n■ 今この瞬間の空:\n${sky}\n月のリズムや近づく宇宙イベントのエネルギーも、過ごし方の助言にそっと反映してください。` : "";
 
+  // これまでの物語(過去のリーディング要約)。あれば「続きの章」として紡ぐ
+  const chapter = (history?.length || 0) + 1;
+  const historyBlock = history && history.length
+    ? `\n\n■ これまでの${name || "相談者"}さんの宇宙の物語(あなたが以前に紡いだ章の要約・古い順):\n${history
+        .map((h) => `第${h.chapter}章「${h.title}」(${h.date}): ${h.summary}`)
+        .join("\n")}\n今回はこの物語の第${chapter}章です。前章までの流れを受けて「物語の続き」として自然につながるように紡いでください。前章のテーマがどう展開したか・季節や星の巡りがどう移ったかに、さりげなく触れると深まります。`
+    : `\n\n今回は${name || "相談者"}さんの宇宙の物語の記念すべき第1章(始まりの章)です。`;
+
   const prompt = `あなたは宇宙のエネルギーの流れ・バイオリズム・西洋占星術を読み解くスピリチュアルなガイドです。
-以下は${name || "相談者"}さんの今週のバイオリズム数値(-100〜100)です。
+${name || "相談者"}さんの毎週のリーディングを「ひとつづきの物語」として章立てで紡いでいます。
+以下は今週のバイオリズム数値(-100〜100)です。
 
 ${summary}
 
 今週の総合エネルギー傾向: ${overall > 0 ? "上昇" : "内省"}
-覚醒スコア: ${awakening}/100${natalBlock}${transitBlock}${skyBlock}
+覚醒スコア: ${awakening}/100${natalBlock}${transitBlock}${skyBlock}${historyBlock}
 
 これらを宇宙のエネルギーの流れとして総合的に解釈し、以下を日本語で答えてください。
 ただし占いを断定的な予言にせず、あくまで「こう過ごすと整いやすい」という提案にとどめてください。
 
 必ず次のJSON形式のみで出力してください(前後の説明やマークダウン不要):
 {
-  "flow": "今週全体のエネルギーの流れを2〜3文で",
+  "chapter_title": "この章の短いタイトル(8文字前後・詩的に。例:静かな種まき)",
+  "flow": "今週全体のエネルギーの流れを2〜3文で(物語の章の書き出しとして)",
   "best_days": "特に調子が良さそうな日とその過ごし方",
   "care_days": "無理を避けたい日とセルフケア",
   "experience": "今週ぜひ体験すると良いこと(具体的に1〜2個)",
-  "ritual": "覚醒や波長を整えるための簡単な習慣を1つ"
+  "ritual": "覚醒や波長を整えるための簡単な習慣を1つ",
+  "story_summary": "この章の要約を1〜2文で(次章を紡ぐとき、あなた自身が読み返すためのメモ)"
 }`;
 
   try {
@@ -84,6 +95,40 @@ ${summary}
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "アドバイスの生成に失敗しました。APIキーと接続を確認してください。" });
+  }
+});
+
+// 宇宙の返歌: 気づきの記録に、宇宙が一行だけ返す
+app.post("/api/echo", async (req, res) => {
+  const { text, sky } = req.body;
+  if (!text) return res.status(400).json({ error: "text required" });
+
+  const prompt = `あなたは「宇宙」そのものとして、人のつぶやきに一行だけ返す存在です。
+ある人が今日、こんな気づきを記録しました:
+
+「${text}」
+${sky ? `\n(いまの空: ${sky})\n` : ""}
+この記録に対して、宇宙からの返歌を一行だけ日本語で返してください。
+- 詩的で、短く(30字以内)、押し付けがましくなく
+- 助言ではなく、そっと寄り添う・映し返す言葉
+- 記録の中の比喩や情景を拾えるとよい
+- 絵文字・記号・鉤括弧は使わない
+
+必ず次のJSON形式のみで出力してください:
+{"echo": "返歌の一行"}`;
+
+  try {
+    const msg = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 200,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const t = msg.content.filter((b) => b.type === "text").map((b) => b.text).join("");
+    res.json(extractJSON(t));
+  } catch (err) {
+    console.error(err);
+    // 返歌は演出なので、失敗しても静かに何も返さない
+    res.json({ echo: null });
   }
 });
 
