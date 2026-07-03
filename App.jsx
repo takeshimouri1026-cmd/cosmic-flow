@@ -196,7 +196,18 @@ export default function App({ session }) {
           </div>
           <div className="flex flex-col md:flex-row gap-4">
             <label className="flex-1 w-full">
-              <span className="text-xs text-stone-400">出生時刻(任意・占星術の精度が上がります)</span>
+              <span className="text-xs text-stone-400 flex items-center gap-2">
+                出生時刻(任意・占星術の精度が上がります)
+                {birthTime && (
+                  <button
+                    type="button"
+                    onClick={() => setBirthTime("")}
+                    className="text-amber-300/80 hover:text-amber-200 underline"
+                  >
+                    クリア
+                  </button>
+                )}
+              </span>
               <input
                 type="time"
                 className="mt-1 w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
