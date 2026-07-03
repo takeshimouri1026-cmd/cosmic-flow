@@ -22,6 +22,7 @@ export default function App({ session }) {
 
   const [data, setData] = useState(null);
   const [natal, setNatal] = useState(null);
+  const [showNatal, setShowNatal] = useState(false);
   const [advice, setAdvice] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -87,6 +88,7 @@ export default function App({ session }) {
     } catch {
       setNatal(null);
     }
+    setShowNatal(false); // 星の配置は既定で折りたたむ（見たい時に開く）
     setAdvice(null);
     setAnalysis(null);
   }
@@ -246,7 +248,14 @@ export default function App({ session }) {
           {/* ネイタル(出生図) */}
           {natal && (
             <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-5 border border-white/10 shadow-[0_0_40px_rgba(120,110,200,0.06)]">
-              <h2 className="font-serif text-xl text-amber-200 mb-1">あなたの星の配置</h2>
+              <div className="flex justify-between items-center">
+                <h2 className="font-serif text-xl text-amber-200">あなたの星の配置</h2>
+                <button onClick={() => setShowNatal(!showNatal)} className="text-xs text-stone-400 hover:text-stone-200 transition">
+                  {showNatal ? "閉じる" : `${natal.sun}・${natal.moon}… 見る`}
+                </button>
+              </div>
+              {showNatal && (
+              <div className="mt-4">
               <p className="text-xs text-stone-400 mb-4 leading-relaxed">
                 生まれた瞬間、空のどこにどの星があったか——それがあなたの「生まれ持った性質」を映します。
                 とくに大切なのが次の3つです。
@@ -283,6 +292,8 @@ export default function App({ session }) {
                 <p className="text-xs text-stone-500 mt-3">
                   {!natal.hasTime && "出生時刻"}{!natal.hasTime && !natal.hasPlace && "・"}{!natal.hasPlace && "出生地"}を入力すると、より正確な配置が読み取れます。
                 </p>
+              )}
+              </div>
               )}
             </div>
           )}
