@@ -175,28 +175,28 @@ export default function App({ session }) {
       <div className="max-w-3xl mx-auto bg-white/[0.04] backdrop-blur-md rounded-2xl p-6 border border-white/10 shadow-[0_0_50px_rgba(120,110,200,0.08)]">
         <div className="space-y-4">
           <div className="flex flex-col md:flex-row gap-4">
-            <label className="flex-1 w-full">
-              <span className="text-xs text-stone-400">お名前(任意)</span>
+            <label className="flex-1 w-full min-w-0">
+              <span className="text-xs text-stone-400 block text-center">お名前(任意)</span>
               <input
-                className="mt-1 w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
+                className="mt-1 w-full box-border appearance-none text-center bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="例: 威之"
               />
             </label>
-            <label className="flex-1 w-full">
-              <span className="text-xs text-stone-400">生年月日</span>
+            <label className="flex-1 w-full min-w-0">
+              <span className="text-xs text-stone-400 block text-center">生年月日</span>
               <input
                 type="date"
-                className="mt-1 w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
+                className="mt-1 w-full box-border appearance-none text-center bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
                 value={birth}
                 onChange={(e) => setBirth(e.target.value)}
               />
             </label>
           </div>
           <div className="flex flex-col md:flex-row gap-4">
-            <label className="flex-1 w-full">
-              <span className="text-xs text-stone-400 flex items-center gap-2">
+            <label className="flex-1 w-full min-w-0">
+              <span className="text-xs text-stone-400 flex items-center justify-center gap-2">
                 出生時刻(任意・占星術の精度が上がります)
                 {birthTime && (
                   <button
@@ -210,15 +210,15 @@ export default function App({ session }) {
               </span>
               <input
                 type="time"
-                className="mt-1 w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
+                className="mt-1 w-full box-border appearance-none text-center bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
                 value={birthTime}
                 onChange={(e) => setBirthTime(e.target.value)}
               />
             </label>
-            <label className="flex-1 w-full">
-              <span className="text-xs text-stone-400">出生地(任意)</span>
+            <label className="flex-1 w-full min-w-0">
+              <span className="text-xs text-stone-400 block text-center">出生地(任意)</span>
               <select
-                className="mt-1 w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
+                className="mt-1 w-full box-border appearance-none text-center bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
                 value={birthPlace}
                 onChange={(e) => setBirthPlace(e.target.value)}
               >
