@@ -13,6 +13,15 @@ const API = import.meta.env.VITE_API_URL || "";
 
 function toISODate(d) { return d.toISOString().slice(0, 10); }
 
+// その週の月曜日(週の始まり)を返す。物語は「週に1章」進む
+function weekStartOf(d) {
+  const day = d.getDay(); // 0=日
+  const diff = day === 0 ? -6 : 1 - day;
+  const m = new Date(d);
+  m.setDate(d.getDate() + diff);
+  return toISODate(m);
+}
+
 export default function App({ session }) {
   const [profile, setProfile] = useState(null);
   const [name, setName] = useState("");
@@ -136,10 +145,22 @@ export default function App({ session }) {
     setAnalysis(null);
   }
 
-  // 今週のアドバイス
+  // 今週のアドバイス(物語は週に1章。同じ週はその章を再表示)
   async function getAdvice() {
     setLoading(true); setError("");
     try {
+      const ws = weekStartOf(new Date());
+      const existing = readings.find((r) => r.week_start === ws);
+
+      // 今週の章がすでにあり内容も保存済みなら、そのまま開く(API呼び出しなし)
+      if (existing?.content) {
+        setAdvice({ ...existing.content, chapter: existing.chapter });
+        setLoading(false);
+        return;
+      }
+
+      // 過去の章(今週を除く)を「これまでの物語」として渡す
+      const pastChapters = readings.filter((r) => r.week_start !== ws);
       const r = await fetch(`${API}/api/advice`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -148,8 +169,7 @@ export default function App({ session }) {
           natal: natal?.summary,
           transit: transits?.summary,
           sky: skySummary(),
-          // 直近5章の要約を渡し「物語の続き」として紡いでもらう
-          history: readings.slice(-5).map((r) => ({
+          history: pastChapters.slice(-5).map((r) => ({
             chapter: r.chapter, title: r.title, summary: r.summary,
             date: new Date(r.created_at).toLocaleDateString("ja-JP"),
           })),
@@ -157,15 +177,23 @@ export default function App({ session }) {
       });
       const j = await r.json();
       if (j.error) throw new Error(j.error);
-      const chapter = readings.length + 1;
+      const chapter = existing ? existing.chapter : pastChapters.length + 1;
       setAdvice({ ...j, chapter });
       // この章を物語として記録(次回の続きの材料になる)
       if (j.story_summary) {
-        await supabase.from("readings").insert({
-          user_id: userId, chapter,
-          title: j.chapter_title || `第${chapter}章`,
-          summary: j.story_summary,
-        });
+        if (existing) {
+          // 内容未保存の既存章(移行期)を更新
+          await supabase.from("readings").update({
+            title: j.chapter_title || `第${chapter}章`,
+            summary: j.story_summary, content: j, week_start: ws,
+          }).eq("id", existing.id);
+        } else {
+          await supabase.from("readings").insert({
+            user_id: userId, chapter,
+            title: j.chapter_title || `第${chapter}章`,
+            summary: j.story_summary, content: j, week_start: ws,
+          });
+        }
         loadReadings();
       }
     } catch (e) {
