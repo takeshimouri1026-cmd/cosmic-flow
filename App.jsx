@@ -219,6 +219,7 @@ export default function App({ session }) {
               <span className="text-xs text-stone-400 block text-center">出生地(任意)</span>
               <select
                 className="mt-1 w-full box-border appearance-none text-center bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none"
+                style={{ textAlignLast: "center" }}
                 value={birthPlace}
                 onChange={(e) => setBirthPlace(e.target.value)}
               >
