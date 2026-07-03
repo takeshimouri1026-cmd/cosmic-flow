@@ -84,7 +84,7 @@ ${summary}
   try {
     const msg = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 1024,
+      max_tokens: 3000, // 物語形式で応答が長くなったため余裕を持たせる(1024だとJSONが途切れる)
       messages: [{ role: "user", content: prompt }],
     });
     const text = msg.content
