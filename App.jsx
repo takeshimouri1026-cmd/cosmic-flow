@@ -342,10 +342,12 @@ export default function App({ session }) {
 
           {/* アドバイス */}
           {!advice && (
-            <button onClick={getAdvice} disabled={loading}
-              className="w-full bg-gradient-to-r from-amber-300 to-amber-400 text-stone-900 font-medium rounded-xl py-3 hover:brightness-105 transition disabled:opacity-50">
-              {loading ? "宇宙の流れを読み解いています…" : "今週のアドバイスを受け取る"}
-            </button>
+            <div className="flex justify-end">
+              <button onClick={getAdvice} disabled={loading}
+                className="bg-gradient-to-r from-amber-300 to-amber-400 text-stone-900 font-medium rounded-xl px-6 py-3 hover:brightness-105 transition disabled:opacity-50">
+                {loading ? "宇宙の流れを読み解いています…" : "今週のアドバイスを受け取る"}
+              </button>
+            </div>
           )}
           {advice && (
             <div className="space-y-4">
@@ -373,12 +375,12 @@ export default function App({ session }) {
               placeholder="気づき・体調・出来事・感情の変化などを自由に書いてください…"
               value={logText} onChange={(e) => setLogText(e.target.value)}
             />
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-end gap-3">
+              {logSaved && <span className="text-emerald-400 text-sm">保存しました ✓</span>}
               <button onClick={handleSaveLog} disabled={!logText.trim()}
                 className="bg-amber-300 text-stone-900 font-medium rounded-lg px-5 py-2 hover:bg-amber-200 transition disabled:opacity-40 text-sm">
                 保存する
               </button>
-              {logSaved && <span className="text-emerald-400 text-sm">保存しました ✓</span>}
             </div>
           </div>
 
@@ -411,10 +413,12 @@ export default function App({ session }) {
                   ))}
                 </div>
               )}
-              <button onClick={getAnalysis} disabled={analysisLoading}
-                className="w-full bg-gradient-to-r from-violet-500 to-indigo-500 text-white font-medium rounded-xl py-3 hover:brightness-110 transition disabled:opacity-50 text-sm">
-                {analysisLoading ? "過去のログを読み解いています…" : "過去のログから現状と今後を分析する"}
-              </button>
+              <div className="flex justify-end">
+                <button onClick={getAnalysis} disabled={analysisLoading}
+                  className="bg-gradient-to-r from-violet-500 to-indigo-500 text-white font-medium rounded-xl px-6 py-3 hover:brightness-110 transition disabled:opacity-50 text-sm">
+                  {analysisLoading ? "過去のログを読み解いています…" : "過去のログから現状と今後を分析する"}
+                </button>
+              </div>
             </div>
           )}
 
