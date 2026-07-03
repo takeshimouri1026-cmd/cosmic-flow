@@ -138,7 +138,6 @@ export default function App({ session }) {
           natal: natal?.summary,
           transit: transits?.summary,
           sky: skySummary(),
-          recentLogs: logs.slice(0, 3).map((l) => ({ date: l.log_date, text: l.text })),
         }),
       });
       const j = await r.json();

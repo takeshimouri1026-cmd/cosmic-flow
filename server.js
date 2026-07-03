@@ -34,7 +34,7 @@ function extractJSON(text) {
 
 // 今週のアドバイスを生成
 app.post("/api/advice", async (req, res) => {
-  const { week, awakening, overall, name, natal, transit, sky, recentLogs } = req.body;
+  const { week, awakening, overall, name, natal, transit, sky } = req.body;
 
   // バイオリズム数値を文章化してモデルに渡す
   const summary = week
@@ -49,9 +49,6 @@ app.post("/api/advice", async (req, res) => {
     : "";
   const transitBlock = transit ? `\n\n■ 今のトランジット(空の天体があなたの出生図に触れていること):\n${transit}\nこれは「今の人生のテーマ」として自然に織り込んでください。` : "";
   const skyBlock = sky ? `\n\n■ 今この瞬間の空:\n${sky}\n月のリズムや近づく宇宙イベントのエネルギーも、過ごし方の助言にそっと反映してください。` : "";
-  const logBlock = recentLogs && recentLogs.length
-    ? `\n\n■ ${name || "相談者"}さんの最近の記録:\n${recentLogs.map((l) => `【${l.date}】${l.text}`).join("\n")}\nこの人の実際の言葉に触れ、寄り添った助言にしてください。`
-    : "";
 
   const prompt = `あなたは宇宙のエネルギーの流れ・バイオリズム・西洋占星術を読み解くスピリチュアルなガイドです。
 以下は${name || "相談者"}さんの今週のバイオリズム数値(-100〜100)です。
@@ -59,7 +56,7 @@ app.post("/api/advice", async (req, res) => {
 ${summary}
 
 今週の総合エネルギー傾向: ${overall > 0 ? "上昇" : "内省"}
-覚醒スコア: ${awakening}/100${natalBlock}${transitBlock}${skyBlock}${logBlock}
+覚醒スコア: ${awakening}/100${natalBlock}${transitBlock}${skyBlock}
 
 これらを宇宙のエネルギーの流れとして総合的に解釈し、以下を日本語で答えてください。
 ただし占いを断定的な予言にせず、あくまで「こう過ごすと整いやすい」という提案にとどめてください。
