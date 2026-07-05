@@ -163,6 +163,30 @@ export async function processMessage(ctx) {
     }
   }
 
+  // --- ④.5 カレンダー共有（判定ブレ対策：分類 or キーワードのどちらかで確実に拾う） ---
+  if (analysis.intent === 'share_schedule' || looksLikeScheduleRequest(text)) {
+    if (!scheduleEnabled) {
+      const msg = `おっへや～、予定の共有はこっちじゃできないんだ。LINEのほうで聞いてね！`;
+      await reply(msg); logBot(msg); markDone(); return;
+    }
+    console.log(`[Brain] 📅 カレンダー共有を実行（intent=${analysis.intent}）`);
+    await reply(`おっへや～！カレンダー見てくるね、ちょっと待って！`);
+    logBot('カレンダー見てくるね、ちょっと待って！');
+    (async () => {
+      try {
+        const { events, weekStart } = await getNextWeekEvents();
+        const response = await generateScheduleMessage(events, weekStart);
+        await push(response);
+        logBot('（来週の予定を共有）');
+      } catch (err) {
+        console.error('[Brain] カレンダーエラー:', err.message);
+        await push(`おっへや～、カレンダーがうまく読めなかったよ～ごめんね！`);
+      }
+    })();
+    markDone();
+    return;
+  }
+
   // --- ⑤ botへの指示 ---
   if (analysis.directed_at_bot) {
     console.log(`[Brain] botへの発言 intent=${analysis.intent}`);
@@ -196,32 +220,6 @@ export async function processMessage(ctx) {
         : `該当する記憶が見つかりませんでした。\n何を忘れればよいか、もう少し詳しく教えていただけますか？`;
       await reply(msg);
       logBot(msg);
-      markDone();
-      return;
-    }
-
-    // カレンダー共有（許可された窓口のみ）
-    if (analysis.intent === 'share_schedule') {
-      if (!scheduleEnabled) {
-        const msg = `おっへや～、予定の共有はこっちじゃできないんだ。LINEのほうで聞いてね！`;
-        await reply(msg);
-        logBot(msg);
-        markDone();
-        return;
-      }
-      await reply(`おっへや～！カレンダー見てくるね、ちょっと待って！`);
-      logBot('カレンダー見てくるね、ちょっと待って！');
-      (async () => {
-        try {
-          const { events, weekStart } = await getNextWeekEvents();
-          const response = await generateScheduleMessage(events, weekStart);
-          await push(response);
-          logBot('（来週の予定を共有）');
-        } catch (err) {
-          console.error('[Brain] カレンダーエラー:', err.message);
-          await push(`おっへや～、カレンダーがうまく読めなかったよ～ごめんね！`);
-        }
-      })();
       markDone();
       return;
     }
@@ -320,6 +318,13 @@ function upgradeConfidence(current) {
   if (current === 'low')    return 'medium';
   if (current === 'medium') return 'high';
   return 'high';
+}
+
+// 予定共有の依頼っぽいか（分類モデルのブレを補う保険。「予定/スケジュール」＋依頼の言葉）
+function looksLikeScheduleRequest(text) {
+  const hasSchedule = /(予定|スケジュール|よてい|スケジュ)/.test(text);
+  const hasRequest  = /(共有|教え|おしえ|見せ|みせ|出し|だし|送っ|おくっ|ちょうだい|まとめ|お願い|おねがい|頼|ある\?|ある？|どう\?|どう？|チェック|確認)/.test(text);
+  return hasSchedule && hasRequest;
 }
 
 function deleteMatchingPreference(person, description) {
