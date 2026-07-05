@@ -11,7 +11,12 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// maxRetries: 一時的な接続切れ("Premature close"等)を自動リトライ / timeout: 60秒
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  maxRetries: 5,
+  timeout: 60000,
+});
 
 const CALL_NAMES = {
   takeyuki: 'おとう',
