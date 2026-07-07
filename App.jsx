@@ -8,6 +8,8 @@ import { supabase } from "./supabase.js";
 import { setMood } from "./cosmicMood.js";
 import { computeNatal, PREFECTURES } from "./natal.js";
 import { moonPhase, nextCosmicEvent, computeTransits } from "./cosmicEvents.js";
+import ExportModal from "./ExportModal.jsx";
+import { logsToText, readingsToText } from "./exportUtils.js";
 
 const API = import.meta.env.VITE_API_URL || "";
 
@@ -46,6 +48,7 @@ export default function App({ session }) {
   const [showLogs, setShowLogs] = useState(false);
   const [echo, setEcho] = useState(null); // 宇宙の返歌
   const [readings, setReadings] = useState([]); // これまでの物語(章)
+  const [exportKind, setExportKind] = useState(null); // "logs" | "readings" | null
 
   const [analysis, setAnalysis] = useState(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
@@ -558,9 +561,14 @@ export default function App({ session }) {
             <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-5 border border-white/10 shadow-[0_0_40px_rgba(120,110,200,0.06)] space-y-3">
               <div className="flex justify-between items-center">
                 <h2 className="font-serif text-xl text-amber-200">これまでの記録</h2>
-                <button onClick={() => setShowLogs(!showLogs)} className="text-xs text-stone-400 hover:text-stone-200 transition">
-                  {showLogs ? "閉じる" : `${logs.length}件を表示`}
-                </button>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setExportKind("logs")} className="text-xs text-amber-300/80 hover:text-amber-200 transition">
+                    取り出す
+                  </button>
+                  <button onClick={() => setShowLogs(!showLogs)} className="text-xs text-stone-400 hover:text-stone-200 transition">
+                    {showLogs ? "閉じる" : `${logs.length}件を表示`}
+                  </button>
+                </div>
               </div>
               {showLogs && (
                 <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
@@ -591,6 +599,19 @@ export default function App({ session }) {
             </div>
           )}
 
+          {/* 物語(章)を取り出す */}
+          {readings.length > 0 && (
+            <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-5 border border-white/10 shadow-[0_0_40px_rgba(120,110,200,0.06)] flex justify-between items-center">
+              <div>
+                <h2 className="font-serif text-lg text-amber-200">あなたの宇宙の物語</h2>
+                <p className="text-xs text-stone-500 mt-1">これまで{readings.length}章を紡いできました</p>
+              </div>
+              <button onClick={() => setExportKind("readings")} className="text-xs text-amber-300/80 hover:text-amber-200 transition border border-amber-300/30 rounded-lg px-4 py-2">
+                取り出す
+              </button>
+            </div>
+          )}
+
           {/* 分析結果 */}
           {analysis && (
             <div className="space-y-4">
@@ -607,6 +628,28 @@ export default function App({ session }) {
       <footer className="max-w-3xl mx-auto mt-16 text-center text-xs text-stone-600">
         バイオリズムは正弦波モデルに基づく自己内省のツールであり、医療・科学的予測ではありません。
       </footer>
+
+      {/* 取り出しモーダル */}
+      <ExportModal
+        open={exportKind === "logs"}
+        onClose={() => setExportKind(null)}
+        title="気づきの記録"
+        kind="logs"
+        items={logs}
+        dateKey="log_date"
+        toText={(filtered, f, t) => logsToText(filtered, name, f, t)}
+        defaultEmail={session.user.email}
+      />
+      <ExportModal
+        open={exportKind === "readings"}
+        onClose={() => setExportKind(null)}
+        title="宇宙の物語"
+        kind="readings"
+        items={readings}
+        dateKey="created_at"
+        toText={(filtered, f, t) => readingsToText(filtered, name, f, t)}
+        defaultEmail={session.user.email}
+      />
     </div>
   );
 }

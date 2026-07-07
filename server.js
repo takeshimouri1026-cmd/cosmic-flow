@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import Anthropic from "@anthropic-ai/sdk";
+import { Resend } from "resend";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
@@ -12,9 +13,12 @@ dotenv.config();
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+// 送信元。独自ドメイン未設定ならResendの共有ドメインを使う
+const MAIL_FROM = process.env.MAIL_FROM || "Cosmic Flow <onboarding@resend.dev>";
 
 // モデル応答からJSONを安全に取り出す（前後の説明やマークダウンが混ざっても拾う）
 function extractJSON(text) {
@@ -194,6 +198,26 @@ ${logSummary}
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "アドバイスの生成に失敗しました。APIキーと接続を確認してください。" });
+  }
+});
+
+// 記録をメールで送る
+app.post("/api/export-email", async (req, res) => {
+  const { to, subject, text } = req.body;
+  if (!to || !text) return res.status(400).json({ error: "宛先と本文が必要です。" });
+  if (!resend) return res.status(503).json({ error: "メール送信は未設定です(管理者にRESEND_API_KEYの設定を依頼してください)。" });
+  try {
+    const { error } = await resend.emails.send({
+      from: MAIL_FROM,
+      to,
+      subject: subject || "Cosmic Flow の記録",
+      text,
+    });
+    if (error) throw new Error(error.message || "送信に失敗しました");
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "メール送信に失敗しました。宛先を確認してください。" });
   }
 });
 
