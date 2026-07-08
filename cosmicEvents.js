@@ -1,5 +1,4 @@
-import pkg from "circular-natal-horoscope-js/dist/index.js";
-const { Origin, Horoscope } = pkg;
+import { Origin, Horoscope } from "circular-natal-horoscope-js/dist/index.js";
 
 const SIGN_JA = {
   Aries: "牡羊座", Taurus: "牡牛座", Gemini: "双子座", Cancer: "蟹座",

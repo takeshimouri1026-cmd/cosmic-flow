@@ -1,5 +1,4 @@
-import pkg from "circular-natal-horoscope-js/dist/index.js";
-const { Origin, Horoscope } = pkg;
+import { Origin, Horoscope } from "circular-natal-horoscope-js/dist/index.js";
 
 // 都道府県 → 県庁所在地のおおよその緯度経度(占星術は数十kmの誤差で十分)
 export const PREFECTURES = {
