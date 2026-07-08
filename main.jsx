@@ -6,10 +6,21 @@ import CosmicBackground from "./CosmicBackground.jsx";
 import { supabase } from "./supabase.js";
 import "./index.css";
 
+// dev限定の視覚プレビュー: `?preview` を付けるとログイン無しで
+// ログイン後画面を実描画できる。本番ビルド(import.meta.env.DEV=false)では無効。
+const previewOn =
+  import.meta.env.DEV &&
+  (new URLSearchParams(window.location.search).has("preview") ||
+    (typeof localStorage !== "undefined" && localStorage.getItem("cf_preview") === "1"));
+const PREVIEW_SESSION = previewOn
+  ? { user: { id: "00000000-0000-0000-0000-000000000000", email: "preview@example.com" } }
+  : null;
+
 function Root() {
-  const [session, setSession] = useState(undefined);
+  const [session, setSession] = useState(PREVIEW_SESSION ? PREVIEW_SESSION : undefined);
 
   useEffect(() => {
+    if (PREVIEW_SESSION) return; // プレビュー時は認証を触らない
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => setSession(session));
     return () => subscription.unsubscribe();

@@ -66,16 +66,20 @@ export default function ExportModal({ open, onClose, title, kind, items, dateKey
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-5 bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="w-full max-w-md bg-[#0f0d24] rounded-2xl p-6 border border-white/10 shadow-[0_0_60px_rgba(120,110,200,0.15)] space-y-4"
+        className="w-full max-w-md rounded-2xl p-6 border border-white/10 space-y-4 reveal"
+        style={{
+          background: "linear-gradient(180deg, #141033, #0d0a22)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06), 0 40px 90px -30px rgba(0,0,0,0.85), 0 0 60px -20px rgba(120,110,200,0.25)",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center">
-          <h3 className="font-serif text-xl text-amber-200">{title}を取り出す</h3>
-          <button onClick={onClose} className="text-stone-500 hover:text-stone-300 text-xl leading-none">×</button>
+          <h3 className="font-serif text-xl t-gold flex items-center gap-2.5"><span className="marker" />{title}を取り出す</h3>
+          <button onClick={onClose} className="t-faint hover:t-ink text-2xl leading-none transition">×</button>
         </div>
 
         {snapshotText != null && (
-          <p className="text-xs text-stone-400">この分析の内容（生成時点のスナップショット）を取り出します。</p>
+          <p className="text-xs t-faint">この分析の内容（生成時点のスナップショット）を取り出します。</p>
         )}
 
         {/* 期間の指定方法 */}
@@ -84,13 +88,15 @@ export default function ExportModal({ open, onClose, title, kind, items, dateKey
         <div className="flex gap-2 text-sm">
           <button
             onClick={() => setMode("month")}
-            className={`flex-1 rounded-lg py-2 border transition ${mode === "month" ? "bg-amber-300/15 border-amber-300/40 text-amber-100" : "border-white/10 text-stone-400 hover:text-stone-200"}`}
+            className={`flex-1 rounded-lg py-2 border transition ${mode === "month" ? "t-gold-b" : "border-white/10 t-faint hover:t-soft"}`}
+            style={mode === "month" ? { background: "rgba(233,200,140,0.12)", borderColor: "rgba(233,200,140,0.4)" } : undefined}
           >
             月で指定
           </button>
           <button
             onClick={() => setMode("range")}
-            className={`flex-1 rounded-lg py-2 border transition ${mode === "range" ? "bg-amber-300/15 border-amber-300/40 text-amber-100" : "border-white/10 text-stone-400 hover:text-stone-200"}`}
+            className={`flex-1 rounded-lg py-2 border transition ${mode === "range" ? "t-gold-b" : "border-white/10 t-faint hover:t-soft"}`}
+            style={mode === "range" ? { background: "rgba(233,200,140,0.12)", borderColor: "rgba(233,200,140,0.4)" } : undefined}
           >
             期間で指定
           </button>
@@ -98,46 +104,44 @@ export default function ExportModal({ open, onClose, title, kind, items, dateKey
 
         {mode === "month" ? (
           <label className="block">
-            <span className="text-xs text-stone-400">対象の月</span>
+            <span className="text-xs t-faint">対象の月</span>
             <input type="month" value={month} onChange={(e) => setMonth(e.target.value)}
-              className="mt-1 w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none" />
+              className="field mt-1.5" />
           </label>
         ) : (
           <div className="flex gap-3">
             <label className="flex-1">
-              <span className="text-xs text-stone-400">いつから</span>
+              <span className="text-xs t-faint">いつから</span>
               <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
-                className="mt-1 w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none" />
+                className="field mt-1.5" />
             </label>
             <label className="flex-1">
-              <span className="text-xs text-stone-400">いつまで</span>
+              <span className="text-xs t-faint">いつまで</span>
               <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
-                className="mt-1 w-full bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none" />
+                className="field mt-1.5" />
             </label>
           </div>
         )}
-        <p className="text-[11px] text-stone-500">期間を空欄にすると全期間が対象になります。</p>
+        <p className="text-[11px] t-dim">期間を空欄にすると全期間が対象になります。</p>
         </>
         )}
 
         {/* 取り出し方 */}
         <div className="border-t border-white/10 pt-4 space-y-3">
-          <button onClick={handleDownload}
-            className="w-full bg-amber-300 text-stone-900 font-medium rounded-lg py-2.5 hover:bg-amber-200 transition text-sm">
+          <button onClick={handleDownload} className="btn btn-gold w-full py-2.5 text-sm">
             テキストファイルでダウンロード
           </button>
 
           <div className="flex gap-2">
             <input type="email" placeholder="送信先メールアドレス" value={email} onChange={(e) => setEmail(e.target.value)}
-              className="flex-1 min-w-0 bg-black/30 rounded-lg px-3 py-2 border border-white/10 focus:border-amber-300/50 outline-none text-sm" />
-            <button onClick={handleEmail} disabled={sending}
-              className="bg-white/10 text-stone-200 font-medium rounded-lg px-4 py-2 hover:bg-white/20 transition disabled:opacity-40 text-sm whitespace-nowrap">
+              className="field flex-1 min-w-0 text-sm" />
+            <button onClick={handleEmail} disabled={sending} className="btn btn-ghost px-4 py-2 text-sm whitespace-nowrap">
               {sending ? "送信中…" : "メールで送る"}
             </button>
           </div>
         </div>
 
-        {msg && <p className="text-emerald-400 text-sm text-center">{msg}</p>}
+        {msg && <p className="text-emerald-300/90 text-sm text-center">{msg}</p>}
         {err && <p className="text-rose-300 text-sm text-center">{err}</p>}
       </div>
     </div>

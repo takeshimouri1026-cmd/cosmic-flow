@@ -2,17 +2,199 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────────
+   Cosmic Flow — デザイントークン
+   琥珀×宇宙×明朝の世界観を、階層と質感で磨き込む
+   ───────────────────────────────────────────── */
+:root {
+  --bg: #050410;
+
+  /* 文字：温かい白〜藍がかったグレー（宇宙の夜に馴染む） */
+  --ink: #ECE8F6;         /* 主要 */
+  --ink-soft: #B4AEC8;    /* 二次 */
+  --ink-faint: #7E7898;   /* ラベル・補足 */
+  --ink-dim: #5C5775;     /* 最も控えめ */
+
+  /* 金：ハイライターの黄ではなく、古金（シャンパンゴールド） */
+  --gold: #E9C88C;        /* 見出し・値 */
+  --gold-bright: #F3D9A0; /* CTA・現在地・物語の要 */
+  --gold-deep: #C9A56A;
+
+  /* 線 */
+  --line: rgba(255,255,255,0.08);
+  --line-soft: rgba(255,255,255,0.045);
+  --line-gold: rgba(233,200,140,0.30);
+}
+
 body {
   margin: 0;
   font-family: ui-sans-serif, system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif;
-  background: #050410;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  letter-spacing: 0.01em;
 }
 .font-serif {
   font-family: "Hiragino Mincho ProN", "Yu Mincho", Georgia, serif;
+  letter-spacing: 0.02em;
 }
 
-/* 宇宙の返歌がゆっくり浮かび上がる */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+/* 選択色も世界観に寄せる */
+::selection { background: rgba(233,200,140,0.22); }
+
+/* 細いスクロールバー（ログ一覧など） */
+.thin-scroll::-webkit-scrollbar { width: 6px; }
+.thin-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; }
+.thin-scroll { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.12) transparent; }
+
+@layer components {
+  /* ── 面の階層 ─────────────────────────────
+     panel:        標準のガラス面
+     panel-sacred: 主役（物語・儀式・要点）— 金の気配
+     inset:        沈んだ面（リスト項目・入力の内側・小カード）
+     ─────────────────────────────────────── */
+  .panel {
+    position: relative;
+    background: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.022));
+    border: 1px solid var(--line);
+    border-radius: 1.25rem;
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
+    backdrop-filter: blur(18px) saturate(1.15);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.06),
+      0 30px 70px -40px rgba(6,3,26,0.95);
+  }
+
+  .panel-sacred {
+    position: relative;
+    background:
+      radial-gradient(120% 140% at 50% -10%, rgba(233,200,140,0.12), transparent 60%),
+      linear-gradient(180deg, rgba(233,200,140,0.06), rgba(255,255,255,0.02));
+    border: 1px solid var(--line-gold);
+    border-radius: 1.25rem;
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
+    backdrop-filter: blur(18px) saturate(1.15);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.10),
+      0 0 50px -12px rgba(233,200,140,0.16),
+      0 30px 70px -40px rgba(6,3,26,0.95);
+  }
+
+  .inset {
+    background: rgba(0,0,0,0.24);
+    border: 1px solid var(--line-soft);
+    border-radius: 0.9rem;
+  }
+
+  /* 情報チップ（天体名など） */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    background: rgba(0,0,0,0.22);
+    border: 1px solid var(--line-soft);
+    border-radius: 999px;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    color: var(--ink-soft);
+  }
+
+  /* 見出しの前に置く小さな天体マーカー */
+  .marker {
+    display: inline-block;
+    width: 0.5rem; height: 0.5rem;
+    border-radius: 999px;
+    background: radial-gradient(circle at 35% 35%, var(--gold-bright), var(--gold-deep));
+    box-shadow: 0 0 10px rgba(233,200,140,0.6);
+    flex: none;
+  }
+
+  /* ── 入力欄 ─────────────────────────────── */
+  .field {
+    width: 100%;
+    box-sizing: border-box;
+    background: rgba(0,0,0,0.28);
+    border: 1px solid var(--line);
+    border-radius: 0.7rem;
+    color: var(--ink);
+    padding: 0.55rem 0.85rem;
+    transition: border-color .25s, box-shadow .25s, background .25s;
+  }
+  .field::placeholder { color: var(--ink-dim); }
+  .field:focus {
+    outline: none;
+    border-color: rgba(233,200,140,0.55);
+    box-shadow: 0 0 0 3px rgba(233,200,140,0.10);
+    background: rgba(0,0,0,0.34);
+  }
+
+  /* ── ボタン ─────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    border-radius: 0.8rem;
+    font-weight: 500;
+    transition: transform .3s cubic-bezier(.2,.7,.2,1), box-shadow .3s, filter .3s, background .3s, color .3s, border-color .3s;
+    cursor: pointer;
+  }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+
+  /* 主要CTA：金の一枚。使いどころを絞ると特別に見える */
+  .btn-gold {
+    background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep));
+    color: #241a08;
+    border: 1px solid rgba(255,230,180,0.5);
+    box-shadow: 0 10px 30px -12px rgba(233,200,140,0.55), inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+  .btn-gold:not(:disabled):hover { transform: translateY(-1px); filter: brightness(1.05); box-shadow: 0 16px 40px -14px rgba(233,200,140,0.7), inset 0 1px 0 rgba(255,255,255,0.5); }
+
+  /* 副次：ガラスの縁取り */
+  .btn-ghost {
+    background: rgba(255,255,255,0.06);
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .btn-ghost:not(:disabled):hover { background: rgba(255,255,255,0.12); transform: translateY(-1px); }
+
+  /* 静かな縁取り（取り出す等） */
+  .btn-outline {
+    background: transparent;
+    color: var(--gold);
+    border: 1px solid var(--line-gold);
+  }
+  .btn-outline:not(:disabled):hover { background: rgba(233,200,140,0.10); border-color: rgba(233,200,140,0.5); }
+
+  /* 内省の流れ用（分析）：宇宙の菫 */
+  .btn-violet {
+    background: linear-gradient(180deg, #8b7cf0, #6355c8);
+    color: #fff;
+    border: 1px solid rgba(180,170,255,0.4);
+    box-shadow: 0 10px 30px -14px rgba(120,110,220,0.7), inset 0 1px 0 rgba(255,255,255,0.25);
+  }
+  .btn-violet:not(:disabled):hover { transform: translateY(-1px); filter: brightness(1.08); }
+
+  /* インタラクティブなカードのホバー浮上 */
+  .lift { transition: transform .4s cubic-bezier(.2,.7,.2,1), box-shadow .4s, border-color .4s; }
+  .lift:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.16); }
+}
+
+/* トークン色を短く使うためのユーティリティ */
+.t-gold { color: var(--gold); }
+.t-gold-b { color: var(--gold-bright); }
+.t-ink { color: var(--ink); }
+.t-soft { color: var(--ink-soft); }
+.t-faint { color: var(--ink-faint); }
+.t-dim { color: var(--ink-dim); }
+
+/* ── モーション ─────────────────────────────── */
+@keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes glowPulse { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }
+
+/* 章タイトルなどが宇宙から浮かび上がる */
+.reveal { animation: rise .7s cubic-bezier(.2,.7,.2,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal, .btn, .lift { animation: none !important; transition: none !important; }
 }
