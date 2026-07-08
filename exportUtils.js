@@ -84,6 +84,31 @@ export function readingsToText(readings, name, from, to) {
   return header + "\n" + (body || "(この期間の章はありません)") + "\n";
 }
 
+// 深掘り分析をテキスト整形(生成時点のスナップショット)
+export function analysisToText(analysis, name) {
+  const header = [
+    "═══════════════════════════════",
+    "  Cosmic Flow ｜ 深掘り分析",
+    name ? `  ${name} さん` : "",
+    `  分析時点: ${analysis.generatedAt || new Date().toLocaleString("ja-JP")}`,
+    "═══════════════════════════════",
+    "",
+    "【あなたの現在地】",
+    analysis.current_state || "",
+    "",
+    "【ログから見えるパターン】",
+    analysis.pattern || "",
+    "",
+    "【今後1ヶ月の流れ】",
+    analysis.forecast || "",
+    "",
+    "【今あなたに必要なこと】",
+    analysis.recommendation || "",
+    "",
+  ].filter((l) => l !== undefined).join("\n");
+  return header;
+}
+
 // テキストをファイルとしてダウンロード
 export function downloadText(filename, text) {
   const blob = new Blob([text], { type: "text/plain;charset=utf-8" });

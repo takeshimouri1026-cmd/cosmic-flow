@@ -9,7 +9,7 @@ import { setMood } from "./cosmicMood.js";
 import { computeNatal, PREFECTURES } from "./natal.js";
 import { moonPhase, nextCosmicEvent, computeTransits } from "./cosmicEvents.js";
 import ExportModal from "./ExportModal.jsx";
-import { logsToText, readingsToText } from "./exportUtils.js";
+import { logsToText, readingsToText, analysisToText } from "./exportUtils.js";
 
 const API = import.meta.env.VITE_API_URL || "";
 
@@ -48,7 +48,7 @@ export default function App({ session }) {
   const [showLogs, setShowLogs] = useState(false);
   const [echo, setEcho] = useState(null); // 宇宙の返歌
   const [readings, setReadings] = useState([]); // これまでの物語(章)
-  const [exportKind, setExportKind] = useState(null); // "logs" | "readings" | null
+  const [exportKind, setExportKind] = useState(null); // "logs" | "readings" | "analysis" | null
 
   const [analysis, setAnalysis] = useState(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
@@ -255,10 +255,15 @@ export default function App({ session }) {
       });
       const j = await r.json();
       if (j.error) throw new Error(j.error);
-      setAnalysis(j);
+      setAnalysis({ ...j, generatedAt: new Date().toLocaleString("ja-JP") });
     } catch (e) {
       setError(e.message || "通信に失敗しました。");
     } finally { setAnalysisLoading(false); }
+  }
+
+  // 分析結果を取り出す(生成時点のスナップショット)
+  function exportAnalysis() {
+    setExportKind("analysis");
   }
 
   return (
@@ -562,11 +567,11 @@ export default function App({ session }) {
               <div className="flex justify-between items-center">
                 <h2 className="font-serif text-xl text-amber-200">これまでの記録</h2>
                 <div className="flex items-center gap-3">
-                  <button onClick={() => setExportKind("logs")} className="text-xs text-amber-300/80 hover:text-amber-200 transition">
-                    取り出す
-                  </button>
                   <button onClick={() => setShowLogs(!showLogs)} className="text-xs text-stone-400 hover:text-stone-200 transition">
                     {showLogs ? "閉じる" : `${logs.length}件を表示`}
+                  </button>
+                  <button onClick={() => setExportKind("logs")} className="text-xs text-amber-300/80 hover:text-amber-200 transition border border-amber-300/30 rounded-lg px-4 py-2">
+                    取り出す
                   </button>
                 </div>
               </div>
@@ -599,6 +604,22 @@ export default function App({ session }) {
             </div>
           )}
 
+          {/* 分析結果 */}
+          {analysis && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <p className="text-xs text-stone-500">— 過去ログ × バイオリズム 深掘り分析（{analysis.generatedAt}時点）—</p>
+                <button onClick={exportAnalysis} className="text-xs text-amber-300/80 hover:text-amber-200 transition border border-amber-300/30 rounded-lg px-4 py-2">
+                  取り出す
+                </button>
+              </div>
+              <Card title="あなたの現在地" body={analysis.current_state} />
+              <Card title="ログから見えるパターン" body={analysis.pattern} />
+              <Card title="今後1ヶ月の流れ" body={analysis.forecast} />
+              <Card title="今あなたに必要なこと" body={analysis.recommendation} highlight />
+            </div>
+          )}
+
           {/* 物語(章)を取り出す */}
           {readings.length > 0 && (
             <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-5 border border-white/10 shadow-[0_0_40px_rgba(120,110,200,0.06)] flex justify-between items-center">
@@ -609,17 +630,6 @@ export default function App({ session }) {
               <button onClick={() => setExportKind("readings")} className="text-xs text-amber-300/80 hover:text-amber-200 transition border border-amber-300/30 rounded-lg px-4 py-2">
                 取り出す
               </button>
-            </div>
-          )}
-
-          {/* 分析結果 */}
-          {analysis && (
-            <div className="space-y-4">
-              <p className="text-xs text-stone-500 text-center">— 過去ログ × バイオリズム 深掘り分析 —</p>
-              <Card title="あなたの現在地" body={analysis.current_state} />
-              <Card title="ログから見えるパターン" body={analysis.pattern} />
-              <Card title="今後1ヶ月の流れ" body={analysis.forecast} />
-              <Card title="今あなたに必要なこと" body={analysis.recommendation} highlight />
             </div>
           )}
         </div>
@@ -648,6 +658,14 @@ export default function App({ session }) {
         items={readings}
         dateKey="created_at"
         toText={(filtered, f, t) => readingsToText(filtered, name, f, t)}
+        defaultEmail={session.user.email}
+      />
+      <ExportModal
+        open={exportKind === "analysis"}
+        onClose={() => setExportKind(null)}
+        title="深掘り分析"
+        kind="analysis"
+        snapshotText={analysis ? analysisToText(analysis, name) : ""}
         defaultEmail={session.user.email}
       />
     </div>

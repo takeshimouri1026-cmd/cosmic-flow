@@ -6,7 +6,8 @@ const API = import.meta.env.VITE_API_URL || "";
 // kind: "logs" | "readings"
 // items: 元データ配列 / dateKey: 期間フィルタに使う日付フィールド
 // toText: (filtered, from, to) => string / defaultEmail: 宛先の初期値
-export default function ExportModal({ open, onClose, title, kind, items, dateKey, toText, defaultEmail }) {
+// snapshotText を渡すと期間指定UIを隠し、その固定テキストをそのまま取り出す(分析結果など)
+export default function ExportModal({ open, onClose, title, kind, items, dateKey, toText, defaultEmail, snapshotText }) {
   const [mode, setMode] = useState("month"); // month | range
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [from, setFrom] = useState("");
@@ -24,6 +25,10 @@ export default function ExportModal({ open, onClose, title, kind, items, dateKey
   }
 
   function build() {
+    if (snapshotText != null) {
+      // スナップショット(期間フィルタなし)。1件扱いで空チェックを通す
+      return { filtered: [1], text: snapshotText };
+    }
     const { from: f, to: t } = resolveRange();
     const filtered = filterByPeriod(items, dateKey, f, t);
     return { filtered, text: toText(filtered, f, t), f, t };
@@ -69,7 +74,13 @@ export default function ExportModal({ open, onClose, title, kind, items, dateKey
           <button onClick={onClose} className="text-stone-500 hover:text-stone-300 text-xl leading-none">×</button>
         </div>
 
+        {snapshotText != null && (
+          <p className="text-xs text-stone-400">この分析の内容（生成時点のスナップショット）を取り出します。</p>
+        )}
+
         {/* 期間の指定方法 */}
+        {snapshotText == null && (
+        <>
         <div className="flex gap-2 text-sm">
           <button
             onClick={() => setMode("month")}
@@ -106,6 +117,8 @@ export default function ExportModal({ open, onClose, title, kind, items, dateKey
           </div>
         )}
         <p className="text-[11px] text-stone-500">期間を空欄にすると全期間が対象になります。</p>
+        </>
+        )}
 
         {/* 取り出し方 */}
         <div className="border-t border-white/10 pt-4 space-y-3">
