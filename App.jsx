@@ -430,7 +430,7 @@ export default function App({ session }) {
         </p>
         {data ? (
           <h1 className="font-serif text-2xl md:text-3xl leading-tight t-ink">
-            宇宙のエネルギーとあなたの今週の流れ
+            宇宙のエネルギーと<br className="sm:hidden" />あなたの今週の流れ
           </h1>
         ) : (
           <>
