@@ -312,7 +312,7 @@ export default function App({ session }) {
   }
 
   // プロフィール入力フォーム（初回オンボーディングと「わたし」タブで共用）
-  const profileCard = (
+  const profileCard = (showAnalyze = true) => (
     <div className="panel p-6 md:p-7">
       <div className="space-y-4">
         <div className="flex flex-col md:flex-row gap-4">
@@ -375,9 +375,11 @@ export default function App({ session }) {
           <button onClick={saveProfile} className="btn btn-ghost px-4 py-2 whitespace-nowrap text-sm">
             保存
           </button>
-          <button onClick={analyze} className="btn btn-gold px-7 py-2.5 whitespace-nowrap">
-            波を読む
-          </button>
+          {showAnalyze && (
+            <button onClick={analyze} className="btn btn-gold px-7 py-2.5 whitespace-nowrap">
+              波を読む
+            </button>
+          )}
         </div>
       </div>
       {profileSaved && <p className="text-emerald-300/90 text-sm mt-3 text-right">プロフィールを保存しました ✓</p>}
@@ -434,7 +436,7 @@ export default function App({ session }) {
           </h1>
         ) : (
           <>
-            <h1 className="font-serif text-[2.5rem] md:text-6xl leading-[1.25] t-ink reveal">
+            <h1 className="font-serif text-[2rem] sm:text-5xl md:text-6xl leading-[1.25] t-ink reveal">
               宇宙のエネルギーと<br />あなたの今週の流れ
             </h1>
             <p className="t-soft mt-5 text-sm leading-relaxed reveal" style={{ animationDelay: "120ms" }}>
@@ -448,7 +450,7 @@ export default function App({ session }) {
       {!data && (
         <div className="max-w-3xl mx-auto space-y-6 reveal" style={{ animationDelay: "200ms" }}>
           {skyCards}
-          {profileCard}
+          {profileCard(true)}
           {error && <p className="text-rose-300 text-sm text-center">{error}</p>}
         </div>
       )}
@@ -628,15 +630,15 @@ export default function App({ session }) {
               {/* 過去ログ一覧 */}
               {logs.length > 0 ? (
                 <div className="panel p-5 md:p-6 space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h2 className="font-serif text-xl t-gold flex items-center gap-2.5">
+                  <div className="flex flex-wrap justify-between items-center gap-x-3 gap-y-2">
+                    <h2 className="font-serif text-xl t-gold flex items-center gap-2.5 whitespace-nowrap">
                       <span className="marker" />これまでの記録
                     </h2>
                     <div className="flex items-center gap-3">
-                      <button onClick={() => setShowLogs(!showLogs)} className="text-xs t-faint hover:t-soft transition">
+                      <button onClick={() => setShowLogs(!showLogs)} className="text-xs t-faint hover:t-soft transition whitespace-nowrap">
                         {showLogs ? "閉じる" : `${logs.length}件を表示`}
                       </button>
-                      <button onClick={() => setExportKind("logs")} className="btn btn-outline text-xs px-4 py-2">
+                      <button onClick={() => setExportKind("logs")} className="btn btn-outline text-xs px-4 py-2 whitespace-nowrap">
                         取り出す
                       </button>
                     </div>
@@ -692,8 +694,8 @@ export default function App({ session }) {
               {/* 物語(章)を取り出す */}
               {readings.length > 0 && (
                 <div className="panel lift p-5 md:p-6 flex justify-between items-center gap-4">
-                  <div>
-                    <h2 className="font-serif text-lg t-gold flex items-center gap-2.5">
+                  <div className="min-w-0">
+                    <h2 className="font-serif text-lg t-gold flex items-center gap-2.5 whitespace-nowrap">
                       <span className="marker" />あなたの宇宙の物語
                     </h2>
                     <p className="text-xs t-faint mt-1 pl-[1.25rem]">これまで{readings.length}章を紡いできました</p>
@@ -709,13 +711,13 @@ export default function App({ session }) {
           {/* ═══ わたしタブ：プロフィール＋星の配置（静的情報） ═══ */}
           {tab === "me" && (
             <div className="space-y-6 reveal">
-              {profileCard}
+              {profileCard(false)}
 
               {/* ネイタル(出生図) */}
               {natal && (
                 <div className="panel p-5 md:p-6">
-                  <div className="flex justify-between items-center gap-3">
-                    <h2 className="font-serif text-xl t-gold flex items-center gap-2.5">
+                  <div className="flex flex-wrap justify-between items-center gap-x-3 gap-y-2">
+                    <h2 className="font-serif text-xl t-gold flex items-center gap-2.5 whitespace-nowrap">
                       <span className="marker" />あなたの星の配置
                     </h2>
                     <button onClick={() => setShowNatal(!showNatal)} className="text-xs t-faint hover:t-soft transition whitespace-nowrap">
