@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>内的宇宙 — 信念のマップ</title>
+<style>
+  html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#05030f;
+    font-family:'Hiragino Sans','Yu Gothic UI','Yu Gothic',-apple-system,sans-serif; }
+  #canvas-wrap { position:fixed; inset:0; }
+  canvas { display:block; touch-action:none; }
+
+  /* ── タイトル・凡例 ── */
+  #hud { position:fixed; top:0; left:0; right:0; padding:16px 18px; pointer-events:none;
+    background:linear-gradient(to bottom, rgba(5,3,15,.75), transparent); }
+  #hud h1 { margin:0; font-size:17px; font-weight:600; letter-spacing:.35em; color:#e6e1f5; }
+  #hud .sub { margin:4px 0 0; font-size:10.5px; letter-spacing:.12em; color:#8b84a8; }
+  #legend { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:10px; }
+  #legend span { display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color:#a79fc4; }
+  #legend i { width:8px; height:8px; border-radius:50%; display:inline-block;
+    box-shadow:0 0 6px currentColor; }
+
+  #hint { position:fixed; right:14px; bottom:12px; font-size:10px; color:#6d668c;
+    letter-spacing:.06em; pointer-events:none; text-align:right; line-height:1.7; }
+
+  /* ── ノード情報カード ── */
+  #card { position:fixed; left:14px; right:14px; bottom:14px; max-width:420px; margin:0 auto;
+    background:rgba(16,11,34,.88); border:1px solid rgba(167,139,250,.25); border-radius:16px;
+    padding:14px 16px; color:#efeafb; backdrop-filter:blur(10px);
+    transform:translateY(16px); opacity:0; transition:all .3s ease; pointer-events:none; }
+  #card.show { transform:translateY(0); opacity:1; pointer-events:auto; }
+  #card .badges { display:flex; gap:6px; margin-bottom:6px; }
+  #card .badge { font-size:9.5px; padding:2px 8px; border-radius:99px; letter-spacing:.08em;
+    border:1px solid rgba(255,255,255,.2); color:#cfc7ea; }
+  #card h2 { margin:0 0 6px; font-size:14.5px; font-weight:600; line-height:1.5; }
+  #card p { margin:0; font-size:12px; line-height:1.8; color:#b7aed6; }
+  @media (min-width:700px){ #card { left:18px; right:auto; margin:0; width:380px; } }
+</style>
+</head>
+<body>
+<div id="canvas-wrap"></div>
+
+<div id="hud">
+  <h1>内的宇宙</h1>
+  <p class="sub">信念と経験が織りなす、生きた認知のマップ — v0.1（暫定的な骨格）</p>
+  <div id="legend"></div>
+</div>
+
+<div id="hint">ドラッグ / スワイプで回転 ・ ホイール / ピンチでズーム<br>星に触れると、その物語が浮かびます</div>
+
+<div id="card">
+  <div class="badges"><span class="badge" id="card-type"></span><span class="badge" id="card-cluster"></span></div>
+  <h2 id="card-title"></h2>
+  <p id="card-desc"></p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+/* =====================================================================
+ * 内的宇宙 — 信念のマップ
+ *
+ * ★拡張ポイント（このマップを"育てる"には）
+ *   1. 下の GRAPH.nodes に新しいドットを1つ追加する
+ *      { id, label(正式名), short(星に浮かぶ短い名), type, cluster, size(1-10), description }
+ *   2. GRAPH.edges に影響線を追加する
+ *      { source, target, strength(0-1), kind("influence"|"resonance"), description }
+ *   3. 新しいクラスタ（人生の新しい領域）が生まれたら CLUSTERS に色と名前を足す
+ *   位置は毎回自動計算されるので、座標を書く必要はない。
+ * ===================================================================== */
+
+// ── ★拡張ポイント：クラスタ定義（新しい領域はここに追加） ──
+const CLUSTERS = {
+  cosmos:    { label: "宇宙・ゆだねる意識", color: "#b18cff" },
+  modernity: { label: "近代への問い・知の探求", color: "#5fa8ff" },
+  earth:     { label: "身体・自然・暮らし", color: "#5ce099" },
+  relation:  { label: "他者・関係性", color: "#ffc164" },
+  meta:      { label: "編集・メタ認知", color: "#ff8fd0" },
+};
+
+const TYPE_LABEL = { belief: "信念", experience: "経験", knowledge: "知識", meta: "メタ" };
+
+// ── ★拡張ポイント：グラフデータ本体（ここに追記して育てる） ──
+const GRAPH = {
+  nodes: [
+    // ---- 信念 ----
+    { id:"b1", label:"私は宇宙そのもの", short:"宇宙そのもの", type:"belief", cluster:"cosmos", size:8,
+      description:"第4チャクラに意識を向けると、そこには宇宙が広がっている。自分という存在の中心に宇宙を見る感覚。" },
+    { id:"b2", label:"まず自分自身との関係を築く", short:"自分との関係", type:"belief", cluster:"relation", size:7,
+      description:"他者との関係性の前に、まず自分自身との関係を築くことが大事。自分を認め、愛すること。" },
+    { id:"b3", label:"近代社会は特殊な期間", short:"近代は特殊", type:"belief", cluster:"modernity", size:9,
+      description:"近代社会は、人間という存在にとって非常に特殊な期間であるという歴史感覚。" },
+    { id:"b4", label:"宇宙の流れに身を任せる", short:"流れに委ねる", type:"belief", cluster:"cosmos", size:9,
+      description:"宇宙の流れに身を任せたほうがうまくいく。自我を手放し、宇宙と一体化する。" },
+    { id:"b5", label:"家族が、仕事の次に大事", short:"家族", type:"belief", cluster:"earth", size:6,
+      description:"家族が、仕事の次に大事。家族といる時が一番リラックスして話が合う。" },
+    { id:"b6", label:"音や響きが大事", short:"音・響き", type:"belief", cluster:"earth", size:5,
+      description:"音や響きが大事。世界を受け取る感覚器としての響き。" },
+    { id:"b7", label:"魂は今世の学びを知っている", short:"魂の求め", type:"belief", cluster:"cosmos", size:7,
+      description:"人は今世で何を学ぶかを、魂として既に知っている。魂の求めに従う。" },
+    { id:"b8", label:"非合理な自分を卑下しない", short:"非合理の肯定", type:"belief", cluster:"modernity", size:9,
+      description:"合理的思考は近代の特殊性の象徴に過ぎない。非合理な自分を卑下する必要はない。" },
+    { id:"b9", label:"自然との調和", short:"自然との調和", type:"belief", cluster:"earth", size:6,
+      description:"自分以外の自然との調和が大事。" },
+    { id:"b10", label:"人は面倒だが放っておけない", short:"放っておけない", type:"belief", cluster:"relation", size:7,
+      description:"人はめんどくさいところが山ほどあるけれど、それでも放っておけない。" },
+
+    // ---- 経験 ----
+    { id:"e1", label:"山形の田舎での幼少期", short:"山形の幼少期", type:"experience", cluster:"earth", size:8,
+      description:"採れたて野菜の美味しさ、空気の美味しさ、人の柔らかさ、祖父に連れて行ってもらった外食の記憶。すべての感覚の原風景。" },
+    { id:"e2", label:"小学校でシステムと戦った経験", short:"小学校の戦い", type:"experience", cluster:"modernity", size:6,
+      description:"個人を抑圧するシステム・規範と折り合えず、戦い続けた。" },
+    { id:"e3", label:"就職活動への違和感", short:"就活の違和感", type:"experience", cluster:"modernity", size:5,
+      description:"就活に一切イメージが持てず、親に懇願されてやむなく行った。" },
+    { id:"e7", label:"リクルートでのマネジメント7年", short:"マネジメント7年", type:"experience", cluster:"relation", size:7,
+      description:"常に問題を起こす面倒なメンバーたちに、奉仕する以外にないという魂の感覚で向き合い続け、自分の弱さと向き合い続けた。" },
+    { id:"e8", label:"結婚と娘の誕生", short:"結婚・娘", type:"experience", cluster:"earth", size:6,
+      description:"結婚し、娘が生まれた。家族といる時が一番リラックスして話が合う。" },
+    { id:"e9", label:"鬱と精神世界との出会い", short:"鬱 → 精神世界", type:"experience", cluster:"cosmos", size:10,
+      description:"【最大級のハブ】就職後の鬱。知人の勧めで参加した関谷直行氏のセミナーで心と体が圧倒的に軽くなる経験をし、いかに自分が外部からの抑圧で自分自身を苦しめていたかを知った。" },
+    { id:"e15", label:"宇宙の記憶（夢）", short:"宇宙の記憶", type:"experience", cluster:"cosmos", size:7,
+      description:"光に乗って宇宙の彼方から地球にやってきて、メキシコ系のピラミッドに吸い込まれていくという、鮮明な夢の記憶。" },
+    { id:"e16", label:"料理", short:"料理", type:"experience", cluster:"earth", size:6,
+      description:"段取りが命で、プロセス全体にライブ感と身体性があり、生きている感覚を得られる。幼少期からの食への強い興味。" },
+
+    // ---- 知識 ----
+    { id:"e4", label:"哲学・文学・宗教学の読書遍歴", short:"読書遍歴", type:"knowledge", cluster:"modernity", size:7,
+      description:"経済学・経営学より先に、柄谷行人、村上春樹、ポール・オースター、ポストモダン哲学、吉田健一『金沢』、武田泰淳『富士』、保坂和志などを読み漁った。" },
+    { id:"e5", label:"松岡正剛『フラジャイル』との出会い", short:"フラジャイル", type:"knowledge", cluster:"meta", size:7,
+      description:"リクルート入社直後、先輩に勧められて。「こういう文章がこの世に存在していたのか」という衝撃。このマップ構想自体の方法論的な起点。" },
+    { id:"e6", label:"龍樹・仏教思想", short:"龍樹・仏教", type:"knowledge", cluster:"modernity", size:6,
+      description:"空を説く仏教の知。実体視された世界と合理を静かに解体する視座。" },
+    { id:"e10", label:"バシャールとの出会い", short:"バシャール", type:"knowledge", cluster:"cosmos", size:7,
+      description:"目の前で起きることの常識的な考えの、常に真逆こそが真実だと言い切る視点。コペルニクス的な知の転換だった。" },
+    { id:"e11", label:"カスタネダ／ナワールとトナール", short:"カスタネダ", type:"knowledge", cluster:"cosmos", size:6,
+      description:"カルロス・カスタネダ。ナワール／トナールの概念。知覚の枠そのものを問う世界観。" },
+    { id:"e12", label:"保守主義への気づき", short:"保守主義", type:"knowledge", cluster:"modernity", size:5,
+      description:"守るためではなく、変えていくためにこそ、これまでのことを正しく知ろうとする思想に感銘を受けた。" },
+    { id:"e13", label:"社会構成主義・学習する組織", short:"社会構成主義", type:"knowledge", cluster:"modernity", size:7,
+      description:"リクルートマネジメントソリューションズでの12年間の研修ファシリテーター経験の中で出会った。現代社会の憂鬱や病の根源を解消しうる理念。" },
+    { id:"e14", label:"マルクスへの敬意", short:"マルクス", type:"knowledge", cluster:"modernity", size:5,
+      description:"資本主義社会の原理を徹底解剖した知性への驚嘆。" },
+
+    // ---- メタ ----
+    { id:"m1", label:"このマップ（知の編集）", short:"知の編集", type:"meta", cluster:"meta", size:6,
+      description:"信念と経験を編集し、自分の認知フレームを可視化する営みそのもの。今後の人生とともに育っていく、生きた地図。" },
+  ],
+
+  edges: [
+    // ---- 経験・知識 → 信念（影響） ----
+    { source:"e1", target:"b5", strength:0.8, kind:"influence", description:"原風景としての家庭の記憶" },
+    { source:"e1", target:"b6", strength:0.7, kind:"influence", description:"土地の空気と音の感覚" },
+    { source:"e1", target:"b9", strength:0.9, kind:"influence", description:"自然と一体だった身体感覚" },
+    { source:"e2", target:"b3", strength:0.7, kind:"influence", description:"抑圧するシステムへの違和感の原点" },
+    { source:"e2", target:"b8", strength:0.6, kind:"influence", description:"規範＝合理の枠への抵抗" },
+    { source:"e3", target:"b3", strength:0.6, kind:"influence", description:"近代的キャリア規範への違和感" },
+    { source:"e3", target:"b8", strength:0.5, kind:"influence", description:"合理的な人生設計になじめない自分" },
+    { source:"e4", target:"b3", strength:0.8, kind:"influence", description:"近代を相対化する知の土台" },
+    { source:"e4", target:"b8", strength:0.7, kind:"influence", description:"合理の外部を知る読書体験" },
+    { source:"e5", target:"m1", strength:0.9, kind:"influence", description:"編集という方法論の原体験" },
+    { source:"e6", target:"b7", strength:0.7, kind:"influence", description:"魂・輪廻的な視座" },
+    { source:"e6", target:"b8", strength:0.7, kind:"influence", description:"実体的な合理を解体する空の思想" },
+    { source:"e7", target:"b2", strength:0.8, kind:"influence", description:"弱さと向き合い続けた歳月" },
+    { source:"e7", target:"b10", strength:0.9, kind:"influence", description:"面倒な人への奉仕の実感" },
+    { source:"e8", target:"b5", strength:0.9, kind:"influence", description:"一番リラックスできる場所" },
+    { source:"e9", target:"b1", strength:0.9, kind:"influence", description:"抑圧が剥がれた先の宇宙感覚" },
+    { source:"e9", target:"b4", strength:0.95, kind:"influence", description:"手放すことで軽くなる原体験" },
+    { source:"e9", target:"b8", strength:0.85, kind:"influence", description:"合理的自己管理の破綻と解放" },
+    { source:"e10", target:"b4", strength:0.85, kind:"influence", description:"常識の真逆という転回" },
+    { source:"e10", target:"b8", strength:0.7, kind:"influence", description:"コペルニクス的な知の転換" },
+    { source:"e11", target:"b4", strength:0.7, kind:"influence", description:"トナールを緩め、ナワールへ" },
+    { source:"e11", target:"b7", strength:0.7, kind:"influence", description:"知覚の枠を超える世界観" },
+    { source:"e12", target:"b3", strength:0.6, kind:"influence", description:"変えるために正しく知る、という新しい角度" },
+    { source:"e13", target:"b3", strength:0.75, kind:"influence", description:"近代の病の解決策としての理念" },
+    { source:"e14", target:"b3", strength:0.6, kind:"influence", description:"資本主義の原理を解剖した知性" },
+    { source:"e15", target:"b1", strength:0.8, kind:"influence", description:"宇宙から来たという身体的記憶" },
+    { source:"e15", target:"b4", strength:0.7, kind:"influence", description:"大きな流れの中の自分" },
+    { source:"e15", target:"b7", strength:0.75, kind:"influence", description:"今世に来た目的の感覚" },
+    { source:"e16", target:"b6", strength:0.7, kind:"influence", description:"調理のリズムと響き" },
+    { source:"e16", target:"b9", strength:0.7, kind:"influence", description:"素材＝自然と関わる身体性" },
+
+    // ---- 信念 ⇔ 信念（共鳴。推定で付与） ----
+    { source:"b1", target:"b4", strength:0.8, kind:"resonance", description:"宇宙である自分が、宇宙に委ねる" },
+    { source:"b3", target:"b8", strength:0.8, kind:"resonance", description:"近代の相対化と非合理の肯定は表裏" },
+    { source:"b2", target:"b10", strength:0.6, kind:"resonance", description:"自分を愛せるから、他人を放っておけない" },
+    { source:"b6", target:"b9", strength:0.5, kind:"resonance", description:"響きは自然との調和の感覚器" },
+    { source:"b4", target:"b7", strength:0.7, kind:"resonance", description:"委ねる先にある魂の羅針盤" },
+  ],
+};
+
+/* ================= 以下、描画エンジン（通常は触らなくてよい） ================= */
+
+const nodesById = {};
+GRAPH.nodes.forEach(n => nodesById[n.id] = n);
+
+// ── 3D力学レイアウト：クラスタごとに集まりつつ、繋がりの強いものが引き合う ──
+function computeLayout() {
+  const centers = {
+    cosmos:    new THREE.Vector3(0, 44, -26),
+    modernity: new THREE.Vector3(-54, 0, 20),
+    earth:     new THREE.Vector3(46, -28, 22),
+    relation:  new THREE.Vector3(36, 16, -44),
+    meta:      new THREE.Vector3(-22, -36, -36),
+  };
+  // 乱数（毎回同じ配置になるよう擬似乱数で固定）
+  let seed = 42;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5;
+
+  GRAPH.nodes.forEach(n => {
+    const c = centers[n.cluster] || new THREE.Vector3();
+    n.pos = c.clone().add(new THREE.Vector3(rand()*30, rand()*30, rand()*30));
+  });
+
+  for (let iter = 0; iter < 260; iter++) {
+    // 反発力
+    for (let i = 0; i < GRAPH.nodes.length; i++) {
+      for (let j = i + 1; j < GRAPH.nodes.length; j++) {
+        const a = GRAPH.nodes[i], b = GRAPH.nodes[j];
+        const d = a.pos.clone().sub(b.pos);
+        const len2 = Math.max(d.lengthSq(), 4);
+        const f = d.normalize().multiplyScalar(1400 / (len2 + 40));
+        a.pos.add(f); b.pos.sub(f);
+      }
+    }
+    // エッジのばね
+    GRAPH.edges.forEach(e => {
+      const a = nodesById[e.source], b = nodesById[e.target];
+      const d = b.pos.clone().sub(a.pos);
+      const len = d.length();
+      const rest = 26;
+      const f = d.normalize().multiplyScalar((len - rest) * 0.018 * e.strength);
+      a.pos.add(f); b.pos.sub(f);
+    });
+    // クラスタ重心へゆるく引き寄せる
+    GRAPH.nodes.forEach(n => {
+      const c = centers[n.cluster];
+      if (c) n.pos.add(c.clone().sub(n.pos).multiplyScalar(0.02));
+    });
+  }
+  // 全体を原点中心へ
+  const mean = new THREE.Vector3();
+  GRAPH.nodes.forEach(n => mean.add(n.pos));
+  mean.multiplyScalar(1 / GRAPH.nodes.length);
+  GRAPH.nodes.forEach(n => n.pos.sub(mean));
+}
+
+// ── シーン ──
+const wrap = document.getElementById('canvas-wrap');
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x05030f, 0.004);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(0, 26, 150);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.75)); // スマホ負荷対策
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x05030f);
+wrap.appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 25;
+controls.maxDistance = 320;
+controls.autoRotate = true;          // カメラは自動でゆっくり漂う
+controls.autoRotateSpeed = 0.45;
+
+// 操作したら自動漂流を一時停止 → 5秒後に再開
+let resumeTimer = null;
+controls.addEventListener('start', () => {
+  controls.autoRotate = false;
+  if (resumeTimer) clearTimeout(resumeTimer);
+});
+controls.addEventListener('end', () => {
+  resumeTimer = setTimeout(() => { controls.autoRotate = true; }, 5000);
+});
+
+// ── 発光テクスチャ ──
+function glowTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64,64,0, 64,64,64);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.25, 'rgba(255,255,255,0.4)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0,0,128,128);
+  return new THREE.CanvasTexture(c);
+}
+const GLOW_TEX = glowTexture();
+
+// ── ラベル（短い名前が星の上に浮かぶ） ──
+function makeLabel(text, colorCss) {
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const fontPx = 30;
+  const font = `500 ${fontPx}px 'Hiragino Sans','Yu Gothic',sans-serif`;
+  const c = document.createElement('canvas');
+  let ctx = c.getContext('2d');
+  ctx.font = font;
+  const w = Math.ceil(ctx.measureText(text).width) + 28;
+  const h = 46;
+  c.width = w * dpr; c.height = h * dpr;
+  ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.font = font;
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.9)';
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = colorCss;
+  ctx.fillText(text, 14, h/2);
+  const tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.85, depthWrite: false });
+  const s = new THREE.Sprite(mat);
+  const k = 0.075;
+  s.scale.set(w * k, h * k, 1);
+  return s;
+}
+
+// ── 星屑の背景 ──
+function makeStars(count, rMin, rMax) {
+  const pos = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const v = new THREE.Vector3().randomDirection().multiplyScalar(rMin + Math.random()*(rMax-rMin));
+    pos.set([v.x, v.y, v.z], i*3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.PointsMaterial({ color: 0x9fb0ff, size: 1.3, sizeAttenuation: true,
+    transparent: true, opacity: 0.65, blending: THREE.AdditiveBlending, depthWrite: false });
+  return new THREE.Points(g, m);
+}
+scene.add(makeStars(700, 260, 620));
+
+// 遠景の星雲（クラスタ色のにじみ）
+Object.values(CLUSTERS).forEach((cl, i) => {
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: GLOW_TEX, color: new THREE.Color(cl.color),
+    transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const a = i / Object.keys(CLUSTERS).length * Math.PI * 2;
+  sp.position.set(Math.cos(a)*320, Math.sin(a*1.7)*160, Math.sin(a)*320);
+  sp.scale.set(420, 420, 1);
+  scene.add(sp);
+});
+
+// ── ノードとエッジの構築 ──
+computeLayout();
+
+const nodeMeshes = [];       // レイキャスト対象
+const nodeVisuals = {};      // id → {mesh, glow, label}
+const graphGroup = new THREE.Group();
+scene.add(graphGroup);
+
+GRAPH.nodes.forEach(n => {
+  const color = new THREE.Color(CLUSTERS[n.cluster].color);
+  const radius = 1.5 + n.size * 0.32;
+
+  // 星の核
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 24, 24),
+    new THREE.MeshBasicMaterial({ color: color.clone().lerp(new THREE.Color('#ffffff'), 0.35),
+      transparent: true, opacity: 1 })
+  );
+  mesh.position.copy(n.pos);
+  mesh.userData.node = n;
+
+  // 星のまわりの光
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: GLOW_TEX, color, transparent: true, opacity: 0.55,
+    blending: THREE.AdditiveBlending, depthWrite: false }));
+  glow.position.copy(n.pos);
+  const gs = radius * 5.2;
+  glow.scale.set(gs, gs, 1);
+  glow.userData.baseScale = gs;
+  glow.userData.phase = Math.random() * Math.PI * 2;
+
+  // ラベル
+  const label = makeLabel(n.short || n.label, '#ded7f2');
+  label.position.copy(n.pos).add(new THREE.Vector3(0, radius + 2.4, 0));
+
+  graphGroup.add(mesh, glow, label);
+  nodeMeshes.push(mesh);
+  nodeVisuals[n.id] = { mesh, glow, label, radius };
+});
+
+// エッジ：発光する光の筋
+const edgeVisuals = [];
+GRAPH.edges.forEach(e => {
+  const a = nodesById[e.source], b = nodesById[e.target];
+  const ca = new THREE.Color(CLUSTERS[a.cluster].color);
+  const cb = new THREE.Color(CLUSTERS[b.cluster].color);
+  const color = e.kind === 'resonance' ? new THREE.Color('#e8e4ff') : ca.clone().lerp(cb, 0.5);
+  const baseOpacity = e.kind === 'resonance' ? 0.10 + e.strength * 0.12 : 0.10 + e.strength * 0.26;
+
+  const geo = new THREE.BufferGeometry().setFromPoints([a.pos, b.pos]);
+  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: baseOpacity,
+    blending: THREE.AdditiveBlending, depthWrite: false });
+  const line = new THREE.Line(geo, mat);
+  graphGroup.add(line);
+
+  // 影響エッジには、源→先へ流れる光の粒を走らせる
+  let particle = null;
+  if (e.kind === 'influence') {
+    particle = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: GLOW_TEX, color, transparent: true, opacity: 0.8,
+      blending: THREE.AdditiveBlending, depthWrite: false }));
+    particle.scale.set(2.2, 2.2, 1);
+    graphGroup.add(particle);
+  }
+  edgeVisuals.push({ e, a, b, line, particle, baseOpacity,
+    offset: Math.random(), speed: 0.05 + e.strength * 0.09 });
+});
+
+// ── 凡例 ──
+const legend = document.getElementById('legend');
+Object.values(CLUSTERS).forEach(cl => {
+  const s = document.createElement('span');
+  s.innerHTML = `<i style="background:${cl.color};color:${cl.color}"></i>${cl.label}`;
+  legend.appendChild(s);
+});
+
+// ── ホバー / タップで情報カード ──
+const card = document.getElementById('card');
+const cardType = document.getElementById('card-type');
+const cardCluster = document.getElementById('card-cluster');
+const cardTitle = document.getElementById('card-title');
+const cardDesc = document.getElementById('card-desc');
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let hovered = null;
+let selected = null;
+
+function pick(clientX, clientY) {
+  pointer.x = (clientX / innerWidth) * 2 - 1;
+  pointer.y = -(clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(nodeMeshes);
+  return hits.length ? hits[0].object.userData.node : null;
+}
+
+function showCard(n) {
+  cardType.textContent = TYPE_LABEL[n.type] || n.type;
+  cardCluster.textContent = CLUSTERS[n.cluster].label;
+  cardCluster.style.borderColor = CLUSTERS[n.cluster].color;
+  cardCluster.style.color = CLUSTERS[n.cluster].color;
+  cardTitle.textContent = n.label;
+  cardDesc.textContent = n.description;
+  card.classList.add('show');
+}
+function hideCard() { card.classList.remove('show'); }
+
+// 選択時：つながる星と光の筋を強調し、他は淡く沈める
+function applyFocus(n) {
+  const connected = new Set();
+  if (n) {
+    connected.add(n.id);
+    GRAPH.edges.forEach(e => {
+      if (e.source === n.id) connected.add(e.target);
+      if (e.target === n.id) connected.add(e.source);
+    });
+  }
+  GRAPH.nodes.forEach(node => {
+    const v = nodeVisuals[node.id];
+    const on = !n || connected.has(node.id);
+    v.mesh.material.opacity = on ? 1 : 0.18;
+    v.glow.material.opacity = on ? 0.55 : 0.10;
+    v.label.material.opacity = on ? 0.85 : 0.12;
+    const k = (n && node.id === n.id) ? 1.35 : 1;
+    v.mesh.scale.setScalar(k);
+  });
+  edgeVisuals.forEach(ev => {
+    const touches = n && (ev.e.source === n.id || ev.e.target === n.id);
+    ev.line.material.opacity = !n ? ev.baseOpacity : (touches ? Math.min(ev.baseOpacity * 2.6, 0.9) : ev.baseOpacity * 0.12);
+    if (ev.particle) ev.particle.material.opacity = !n ? 0.8 : (touches ? 1 : 0.06);
+  });
+}
+
+// タップとドラッグの判別
+let downX = 0, downY = 0;
+renderer.domElement.addEventListener('pointerdown', ev => { downX = ev.clientX; downY = ev.clientY; });
+renderer.domElement.addEventListener('pointerup', ev => {
+  const moved = Math.hypot(ev.clientX - downX, ev.clientY - downY);
+  if (moved > 8) return; // ドラッグは無視
+  const n = pick(ev.clientX, ev.clientY);
+  if (n) {
+    selected = (selected && selected.id === n.id) ? null : n;
+    if (selected) showCard(selected); else hideCard();
+  } else {
+    selected = null; hideCard();
+  }
+  applyFocus(selected);
+});
+
+// PCのホバー（選択が無いときだけカードを出す）
+renderer.domElement.addEventListener('pointermove', ev => {
+  if (ev.pointerType === 'touch') return;
+  const n = pick(ev.clientX, ev.clientY);
+  renderer.domElement.style.cursor = n ? 'pointer' : 'grab';
+  if (n !== hovered) {
+    hovered = n;
+    if (!selected) {
+      if (n) showCard(n); else hideCard();
+    }
+  }
+});
+
+// ── アニメーションループ ──
+const clock = new THREE.Clock();
+const tmpV = new THREE.Vector3();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  // 星の呼吸（光がゆっくり脈打つ）
+  GRAPH.nodes.forEach(node => {
+    const v = nodeVisuals[node.id];
+    const s = v.glow.userData.baseScale * (1 + 0.07 * Math.sin(t * 1.4 + v.glow.userData.phase));
+    v.glow.scale.set(s, s, 1);
+  });
+
+  // 光の粒が影響の向きに流れる
+  edgeVisuals.forEach(ev => {
+    if (!ev.particle) return;
+    const p = (t * ev.speed + ev.offset) % 1;
+    tmpV.lerpVectors(ev.a.pos, ev.b.pos, p);
+    ev.particle.position.copy(tmpV);
+  });
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "name": "inner-universe",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "npm --prefix client install && npm --prefix client run build && npm --prefix server install && npm --prefix server run build",
+    "start": "npm --prefix server run start",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "seed": "npm --prefix server run seed"
+  },
+  "dependencies": {
+    "@types/ws": "^8.18.1",
+    "win-ca": "^3.5.1",
+    "ws": "^8.21.0"
+  }
+}
