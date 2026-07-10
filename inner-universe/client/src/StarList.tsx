@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { connectionsOf } from "./connections";
 import type { Cluster, EdgeKind, GraphEdge, GraphNode } from "./types";
 import { computeNetDegree, mixWithWhite, ringTierFor, sourceScoreFor } from "./sourceScore";
 
@@ -37,15 +38,6 @@ export default function StarList({ nodes, edges, clusters, onSelect, onReverseEd
     byCluster.set(n.cluster, list);
   });
   byCluster.forEach((list) => list.sort((a, b) => sourceScoreFor(netDegree, b.key) - sourceScoreFor(netDegree, a.key)));
-
-  const connectionsOf = (key: string) =>
-    edges
-      .filter((e) => e.source_key === key || e.target_key === key)
-      .map((e) => {
-        const direction: "in" | "out" = e.target_key === key ? "in" : "out";
-        const otherKey = direction === "in" ? e.source_key : e.target_key;
-        return { edge: e, otherKey, otherNode: nodeByKey.get(otherKey), direction };
-      });
 
   return (
     <div className="star-list">
@@ -94,10 +86,10 @@ export default function StarList({ nodes, edges, clusters, onSelect, onReverseEd
                     </button>
                     {expanded && (
                       <div className="star-list-connections">
-                        {connectionsOf(n.key).length === 0 && (
+                        {connectionsOf(edges, n.key, nodeByKey).length === 0 && (
                           <div className="star-list-connections-empty">つながっている星はまだありません</div>
                         )}
-                        {connectionsOf(n.key).map(({ edge, otherKey, otherNode, direction }) => {
+                        {connectionsOf(edges, n.key, nodeByKey).map(({ edge, otherKey, otherNode, direction }) => {
                           const otherCluster = otherNode ? clusterMap.get(otherNode.cluster) : undefined;
                           return (
                             <div key={edge.id} className="star-list-conn-row">

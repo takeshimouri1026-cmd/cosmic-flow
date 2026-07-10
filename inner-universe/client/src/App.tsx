@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import UniverseScene from "./UniverseScene";
 import DetailPanel from "./DetailPanel";
+import ChamberPanel from "./ChamberPanel";
 import InterviewPanel from "./InterviewPanel";
 import TiePicker from "./TiePicker";
 import StarList from "./StarList";
 import ClusterManager from "./ClusterManager";
+import { connectionsOf } from "./connections";
 import {
   confirmNode,
   createCluster,
@@ -13,15 +15,17 @@ import {
   deleteEdge,
   fetchDefaultUniverse,
   fetchGraph,
+  narratePath,
   patchEdge,
   patchNode,
   rejectNode,
   renameCluster,
+  saveExpedition,
   streamAction,
   streamInterview,
 } from "./api";
 import type { UserAction } from "./api";
-import type { EdgeKind, GraphEdge, GraphNode, GraphState, InterviewEvent } from "./types";
+import type { EdgeKind, ExpeditionStep, GraphEdge, GraphNode, GraphState, InterviewEvent } from "./types";
 
 interface ChatLine {
   role: "user" | "assistant";
@@ -45,6 +49,16 @@ export default function App() {
   const [starListOpen, setStarListOpen] = useState(false);
   const [clusterManagerOpen, setClusterManagerOpen] = useState(false);
   const [focusRequest, setFocusRequest] = useState<{ key: string; nonce: number } | null>(null);
+  const [chamberKey, setChamberKey] = useState<string | null>(null);
+  const [expeditionPath, setExpeditionPath] = useState<ExpeditionStep[]>([]);
+  const [narration, setNarration] = useState<string | null>(null);
+  const [narrating, setNarrating] = useState(false);
+  const [travelRequest, setTravelRequest] = useState<{
+    edgeId: string;
+    fromKey: string;
+    toKey: string;
+    nonce: number;
+  } | null>(null);
   const streamingTextRef = useRef("");
   const cutUndoTimerRef = useRef<number | null>(null);
 
@@ -332,9 +346,99 @@ export default function App() {
     }
   }, []);
 
-  const handleSceneSelect = useCallback((n: GraphNode | null) => {
-    setSelectedKey(n?.key ?? null);
+  const handleSceneSelect = useCallback(
+    (n: GraphNode | null) => {
+      if (chamberKey) return; // 探索モード中はDOMシートが主導。3Dタップで裏の選択状態を変えない
+      setSelectedKey(n?.key ?? null);
+    },
+    [chamberKey]
+  );
+
+  // 探索モード（§12）: この星に潜る
+  const handleDive = useCallback((key: string) => {
+    setChamberKey(key);
+    setExpeditionPath([{ node_key: key, edge_id: null, memo: null }]);
+    setNarration(null);
+    setSelectedKey(null);
   }, []);
+
+  // 通路をタップして辿る（§12.3）。実際のchamberKey更新はカメラ到着後（onArrived）で行う
+  const handleTraverse = useCallback(
+    (edge: GraphEdge) => {
+      if (!chamberKey) return;
+      const toKey = edge.source_key === chamberKey ? edge.target_key : edge.source_key;
+      setTravelRequest({ edgeId: edge.id, fromKey: chamberKey, toKey, nonce: Date.now() });
+    },
+    [chamberKey]
+  );
+
+  const handleArrived = useCallback((toKey: string, edgeId: string) => {
+    setChamberKey(toKey);
+    setExpeditionPath((prev) => [...prev, { node_key: toKey, edge_id: edgeId, memo: null }]);
+    setNarration(null);
+  }, []);
+
+  // パンくずタップで経路を巻き戻す（曲線移動ではなく瞬間ジャンプでよい）
+  const handleJumpToBreadcrumb = useCallback(
+    (index: number) => {
+      const step = expeditionPath[index];
+      if (!step) return;
+      setExpeditionPath((prev) => prev.slice(0, index + 1));
+      setChamberKey(step.node_key);
+      setFocusRequest({ key: step.node_key, nonce: Date.now() });
+      setNarration(null);
+    },
+    [expeditionPath]
+  );
+
+  const handleSetMemo = useCallback((memo: string) => {
+    setExpeditionPath((prev) => {
+      if (prev.length === 0) return prev;
+      const next = [...prev];
+      next[next.length - 1] = { ...next[next.length - 1], memo: memo || null };
+      return next;
+    });
+  }, []);
+
+  // 「この糸、確かにある」（§12.3）。LLMを通さない直接更新
+  const handleReinforceEdge = useCallback(async (edge: GraphEdge) => {
+    setBusy(true);
+    try {
+      const { edge: updated } = (await patchEdge(edge.id, { reinforce: true })) as { edge: GraphEdge };
+      setGraph((g) => (g ? { ...g, edges: g.edges.map((e) => (e.id === edge.id ? updated : e)) } : g));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const handleNarrate = useCallback(async () => {
+    if (!graph) return;
+    setNarrating(true);
+    try {
+      const { narration: text } = await narratePath(graph.universe.id, expeditionPath);
+      setNarration(text);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setNarrating(false);
+    }
+  }, [graph, expeditionPath]);
+
+  // 浮上。1回以上辿っていれば探検ログを保存する（1星だけ覗いて何もせず浮上した場合は保存しない）
+  const handleSurface = useCallback(async () => {
+    if (graph && expeditionPath.length > 1) {
+      try {
+        await saveExpedition(graph.universe.id, expeditionPath, narration);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    }
+    setChamberKey(null);
+    setExpeditionPath([]);
+    setNarration(null);
+  }, [graph, expeditionPath, narration]);
 
   // レンズは「今どの問いで見ているか」の切り替えなので、選んでいる星があると
   // 効果がその星の近傍だけに埋もれて分かりにくくなる。切り替え時は選択を解除する
@@ -404,16 +508,14 @@ export default function App() {
   const selectedNode: GraphNode | null = selectedKey ? graph.nodes.find((n) => n.key === selectedKey) ?? null : null;
   const selectedCluster = selectedNode ? graph.clusters.find((c) => c.key === selectedNode.cluster) : undefined;
 
-  const connections = selectedNode
-    ? graph.edges
-        .filter((e) => e.source_key === selectedNode.key || e.target_key === selectedNode.key)
-        .map((e) => {
-          const direction: "in" | "out" = e.target_key === selectedNode.key ? "in" : "out";
-          const otherKey = direction === "in" ? e.source_key : e.target_key;
-          const otherNode = graph.nodes.find((n) => n.key === otherKey);
-          return { edge: e, otherKey, otherLabel: otherNode?.label ?? otherKey, direction };
-        })
-    : [];
+  const nodeByKey = new Map(graph.nodes.map((n) => [n.key, n]));
+  const connections = selectedNode ? connectionsOf(graph.edges, selectedNode.key, nodeByKey) : [];
+
+  const chamberNode: GraphNode | null = chamberKey ? nodeByKey.get(chamberKey) ?? null : null;
+  const chamberConnections = chamberKey ? connectionsOf(graph.edges, chamberKey, nodeByKey) : [];
+  const lastStep = expeditionPath[expeditionPath.length - 1];
+  const arrivedEdge = lastStep?.edge_id ? graph.edges.find((e) => e.id === lastStep.edge_id) ?? null : null;
+  const pathNodes = expeditionPath.map((step) => nodeByKey.get(step.node_key));
 
   return (
     <>
@@ -426,36 +528,41 @@ export default function App() {
         bornKey={bornKey}
         lensKeys={lensNodeKeys}
         focusRequest={focusRequest}
+        chamberKey={chamberKey}
+        travelRequest={travelRequest}
+        onArrived={handleArrived}
       />
 
-      <div className="hud">
-        <h1>{graph.universe.title}</h1>
-        <p className="sub">語るそばから、宇宙が育つ</p>
-        <div className="legend">
-          {graph.clusters.map((c) => (
-            <button
-              key={c.key}
-              className={`lens${lensCluster === c.key ? " active" : ""}`}
-              onClick={() => toggleLensCluster(c.key)}
-            >
-              <i style={{ background: c.color, color: c.color }} />
-              {c.label}
+      {!chamberKey && (
+        <div className="hud">
+          <h1>{graph.universe.title}</h1>
+          <p className="sub">語るそばから、宇宙が育つ</p>
+          <div className="legend">
+            {graph.clusters.map((c) => (
+              <button
+                key={c.key}
+                className={`lens${lensCluster === c.key ? " active" : ""}`}
+                onClick={() => toggleLensCluster(c.key)}
+              >
+                <i style={{ background: c.color, color: c.color }} />
+                {c.label}
+              </button>
+            ))}
+            <button className={`lens${lensInferred ? " active" : ""}`} onClick={toggleLensInferred}>
+              <i style={{ background: "#ffd68a", color: "#ffd68a" }} />
+              推定
             </button>
-          ))}
-          <button className={`lens${lensInferred ? " active" : ""}`} onClick={toggleLensInferred}>
-            <i style={{ background: "#ffd68a", color: "#ffd68a" }} />
-            推定
-          </button>
-          <button className="lens" onClick={() => setStarListOpen(true)}>
-            ☰ 一覧
-          </button>
-          <button className="lens" onClick={() => setClusterManagerOpen(true)}>
-            ✎ クラスタ
-          </button>
+            <button className="lens" onClick={() => setStarListOpen(true)}>
+              ☰ 一覧
+            </button>
+            <button className="lens" onClick={() => setClusterManagerOpen(true)}>
+              ✎ クラスタ
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
-      {starListOpen && (
+      {!chamberKey && starListOpen && (
         <StarList
           nodes={graph.nodes}
           edges={graph.edges as GraphEdge[]}
@@ -472,7 +579,7 @@ export default function App() {
         />
       )}
 
-      {clusterManagerOpen && (
+      {!chamberKey && clusterManagerOpen && (
         <ClusterManager
           clusters={graph.clusters}
           onClose={() => setClusterManagerOpen(false)}
@@ -482,7 +589,7 @@ export default function App() {
         />
       )}
 
-      {selectedNode && (
+      {!chamberKey && selectedNode && (
         <DetailPanel
           node={selectedNode}
           clusterLabel={selectedCluster?.label ?? selectedNode.cluster}
@@ -498,11 +605,32 @@ export default function App() {
           onStartTie={() => setTyingFrom((cur) => (cur === selectedNode.key ? null : selectedNode.key))}
           tyingFromThisNode={tyingFrom === selectedNode.key}
           onPlantNode={handlePlantNode}
+          onDive={() => handleDive(selectedNode.key)}
           busy={busy}
         />
       )}
 
-      {tyingFrom && (
+      {chamberKey && chamberNode && (
+        <ChamberPanel
+          key={chamberKey}
+          node={chamberNode}
+          connections={chamberConnections}
+          path={expeditionPath}
+          pathNodes={pathNodes}
+          arrivedEdge={arrivedEdge}
+          narration={narration}
+          narrating={narrating}
+          busy={busy}
+          onTraverse={handleTraverse}
+          onJumpBreadcrumb={handleJumpToBreadcrumb}
+          onSetMemo={handleSetMemo}
+          onReinforce={handleReinforceEdge}
+          onNarrate={handleNarrate}
+          onSurface={handleSurface}
+        />
+      )}
+
+      {!chamberKey && tyingFrom && (
         <TiePicker
           sourceLabel={graph.nodes.find((n) => n.key === tyingFrom)?.label ?? tyingFrom}
           candidates={graph.nodes.filter((n) => n.key !== tyingFrom)}

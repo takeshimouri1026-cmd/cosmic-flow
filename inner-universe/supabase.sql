@@ -75,3 +75,13 @@ alter table nodes add column if not exists user_edited boolean not null default 
 -- 関係タイプ。既存エッジは全てデフォルトのinfluenceのまま（一括再分類はしない）
 alter table edges add column if not exists kind text not null default 'influence'
   check (kind in ('influence','example','resonance'));
+
+-- フェーズ2b: 探索モード（§12）
+-- 探検ログ。どこを歩いたか自体が編集会議・好奇心エンジンの一級の入力になる
+create table if not exists expeditions (
+  id uuid primary key default gen_random_uuid(),
+  universe_id uuid references universes(id) on delete cascade,
+  path jsonb not null,        -- [{node_key, edge_id, memo}...]
+  narration text,             -- 「道のりを読み解く」で生成した内省ナレーション
+  created_at timestamptz default now()
+);

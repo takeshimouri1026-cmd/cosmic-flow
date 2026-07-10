@@ -71,6 +71,20 @@ alter table edges add column if not exists kind text not null default 'influence
 
 既存エッジは全てデフォルトの `influence` のままになる（一括再分類はしない。§2.1参照）。
 
+## 3.7 フェーズ2b（探索モード）のDB更新
+
+新規テーブル。既存テーブルへのALTERは無いので、Supabaseプロジェクトへの追加はこのテーブル作成だけで済む（[supabase.sql](supabase.sql) 末尾に追記済み。まとめて再実行しても冪等）:
+
+```sql
+create table if not exists expeditions (
+  id uuid primary key default gen_random_uuid(),
+  universe_id uuid references universes(id) on delete cascade,
+  path jsonb not null,
+  narration text,
+  created_at timestamptz default now()
+);
+```
+
 ## 4. ローカル開発
 
 ```bash

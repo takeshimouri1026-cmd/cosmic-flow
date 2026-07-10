@@ -1,4 +1,4 @@
-import type { Cluster, EdgeKind, GraphState, InterviewEvent, Universe } from "./types";
+import type { Cluster, EdgeKind, Expedition, ExpeditionStep, GraphState, InterviewEvent, Universe } from "./types";
 
 const APP_SECRET = import.meta.env.VITE_APP_SHARED_SECRET as string | undefined;
 
@@ -91,12 +91,36 @@ export async function deleteEdge(edgeId: string) {
   return asJson(res);
 }
 
-// 糸の関係を編む（§13.5）: kindの変更・向きの反転。LLMには流さない直接更新
-export async function patchEdge(edgeId: string, patch: { kind?: EdgeKind; reverse?: boolean }) {
+// 糸の関係を編む（§13.5）/ 強化する（§12.3）。LLMには流さない直接更新
+export async function patchEdge(edgeId: string, patch: { kind?: EdgeKind; reverse?: boolean; reinforce?: boolean }) {
   const res = await fetch(`/api/edges/${edgeId}`, {
     method: "PATCH",
     headers: headers({ "Content-Type": "application/json" }),
     body: JSON.stringify(patch),
+  });
+  return asJson(res);
+}
+
+// 探索モード（§12.5）: 経路の内省ナレーションを単発生成する
+export async function narratePath(universeId: string, path: ExpeditionStep[]): Promise<{ narration: string }> {
+  const res = await fetch(`/api/universe/${universeId}/narrate-path`, {
+    method: "POST",
+    headers: headers({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ path }),
+  });
+  return asJson(res);
+}
+
+// 探索モード（§12.5）: 探検の終わりに経路とナレーションを保存する
+export async function saveExpedition(
+  universeId: string,
+  path: ExpeditionStep[],
+  narration: string | null
+): Promise<{ expedition: Expedition }> {
+  const res = await fetch(`/api/universe/${universeId}/expeditions`, {
+    method: "POST",
+    headers: headers({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ path, narration }),
   });
   return asJson(res);
 }

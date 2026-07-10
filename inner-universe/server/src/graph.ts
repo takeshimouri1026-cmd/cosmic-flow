@@ -1,5 +1,5 @@
 import { supabase } from "./db.js";
-import type { Cluster, GraphEdge, GraphNode, Universe } from "./types.js";
+import type { Cluster, ExpeditionStep, GraphEdge, GraphNode, Universe } from "./types.js";
 
 export async function getUniverse(universeId: string): Promise<Universe> {
   const { data, error } = await supabase
@@ -43,6 +43,24 @@ export function buildGraphDigest(
   const edgeBody = edgeLines.length ? edgeLines.join("\n") : "(まだ糸がありません)";
   const pending = pendingQuestion ? `\npending_question: ${pendingQuestion}` : "";
   return `<graph_digest>\n${body}\n--- edges (source->target, kind) ---\n${edgeBody}${pending}\n</graph_digest>`;
+}
+
+// 探索モード（§12.5）: 辿った経路を、ナレーション生成のためのテキストに組み立てる
+export function buildPathText(nodes: GraphNode[], edges: GraphEdge[], path: ExpeditionStep[]): string {
+  const nodeByKey = new Map(nodes.map((n) => [n.key, n]));
+  const edgeById = new Map(edges.map((e) => [e.id, e]));
+  return path
+    .map((step) => {
+      const node = nodeByKey.get(step.node_key);
+      const label = node?.label ?? step.node_key;
+      const desc = node?.description ?? "";
+      const edge = step.edge_id ? edgeById.get(step.edge_id) : undefined;
+      const lines = [`${label} — ${desc}`];
+      if (edge) lines.push(`  └(糸「${edge.description}」経由)`);
+      if (step.memo) lines.push(`  メモ: 「${step.memo}」`);
+      return lines.join("\n");
+    })
+    .join("\n");
 }
 
 // resonanceは向きに意味がないため、挿入時にサーバ側で逆向きの既存行もチェックして重複を防ぐ（§2.1）

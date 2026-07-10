@@ -54,6 +54,20 @@ export interface GraphState {
   clusters: Cluster[];
 }
 
+export interface ExpeditionStep {
+  node_key: string;
+  edge_id: string | null;
+  memo: string | null;
+}
+
+export interface Expedition {
+  id: string;
+  universe_id: string;
+  path: ExpeditionStep[];
+  narration: string | null;
+  created_at: string;
+}
+
 export type InterviewEvent =
   | { type: "text"; text: string }
   | { type: "node_added"; node: GraphNode }

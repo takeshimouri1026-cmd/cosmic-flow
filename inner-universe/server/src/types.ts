@@ -46,3 +46,17 @@ export interface Universe {
   version: string;
   created_at: string;
 }
+
+export interface ExpeditionStep {
+  node_key: string;
+  edge_id: string | null;
+  memo: string | null;
+}
+
+export interface Expedition {
+  id: string;
+  universe_id: string;
+  path: ExpeditionStep[];
+  narration: string | null;
+  created_at: string;
+}

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import type { Connection } from "./connections";
+import { groupConnections } from "./connections";
 import type { EdgeKind, GraphEdge, GraphNode } from "./types";
 
 const TYPE_LABEL: Record<string, string> = {
@@ -13,13 +15,6 @@ const KIND_LABEL: Record<EdgeKind, string> = {
   example: "あらわれ",
   resonance: "響き合い",
 };
-
-interface Connection {
-  edge: GraphEdge;
-  otherKey: string;
-  otherLabel: string;
-  direction: "in" | "out";
-}
 
 interface Props {
   node: GraphNode | null;
@@ -36,6 +31,7 @@ interface Props {
   onStartTie: () => void;
   tyingFromThisNode: boolean;
   onPlantNode: (name: string, comment: string) => Promise<void>;
+  onDive: () => void;
   busy: boolean;
 }
 
@@ -54,6 +50,7 @@ export default function DetailPanel({
   onStartTie,
   tyingFromThisNode,
   onPlantNode,
+  onDive,
   busy,
 }: Props) {
   const [editing, setEditing] = useState(false);
@@ -100,10 +97,7 @@ export default function DetailPanel({
     setPlanting(false);
   };
 
-  // §2.1・§13.5: 源流/流れの先はinfluenceの糸だけの群。example/resonanceは別群「あらわれ・響き」
-  const incoming = connections.filter((c) => c.edge.kind === "influence" && c.direction === "in");
-  const outgoing = connections.filter((c) => c.edge.kind === "influence" && c.direction === "out");
-  const others = connections.filter((c) => c.edge.kind !== "influence");
+  const { incoming, outgoing, others } = groupConnections(connections);
 
   return (
     <div className="card show">
@@ -156,6 +150,9 @@ export default function DetailPanel({
           <button disabled={busy} onClick={onStartTie}>
             {tyingFromThisNode ? "…相手の星を選択中" : "＋この星から糸を張る"}
           </button>
+          <button disabled={busy} onClick={onDive}>
+            ⛏ この星に潜る
+          </button>
         </div>
       )}
 
@@ -200,7 +197,7 @@ export default function DetailPanel({
               {incoming.map((c) => (
                 <div className="conn-row" key={c.edge.id}>
                   <div className="conn-text">
-                    <b>{c.otherLabel}</b>
+                    <b>{c.otherNode?.label ?? c.otherKey}</b>
                     <span>{c.edge.description}</span>
                   </div>
                   <select
@@ -228,7 +225,7 @@ export default function DetailPanel({
               {outgoing.map((c) => (
                 <div className="conn-row" key={c.edge.id}>
                   <div className="conn-text">
-                    <b>{c.otherLabel}</b>
+                    <b>{c.otherNode?.label ?? c.otherKey}</b>
                     <span>{c.edge.description}</span>
                   </div>
                   <select
@@ -256,7 +253,7 @@ export default function DetailPanel({
               {others.map((c) => (
                 <div className="conn-row" key={c.edge.id}>
                   <div className="conn-text">
-                    <b>{c.otherLabel}</b>
+                    <b>{c.otherNode?.label ?? c.otherKey}</b>
                     <span>{c.edge.description}</span>
                   </div>
                   <select

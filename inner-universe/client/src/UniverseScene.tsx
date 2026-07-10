@@ -17,6 +17,12 @@ interface Props {
   /** 一覧から星を選んだ時など、任意のタイミングでカメラをその星へ向けるための要求。
    * 同じkeyを連続で送ってもnonceを変えれば毎回反応する */
   focusRequest: { key: string; nonce: number } | null;
+  /** 探索モード（§12）: 潜っているチェンバーの星key。nullなら俯瞰モード */
+  chamberKey: string | null;
+  /** 通路をタップして隣の星へ辿る要求（§12.3）。ワンショット、focusRequestと同じ{key,nonce}パターン */
+  travelRequest: { edgeId: string; fromKey: string; toKey: string; nonce: number } | null;
+  /** 辿るカメラアニメーションが到着した時に呼ばれる */
+  onArrived: (toKey: string, edgeId: string) => void;
 }
 
 interface NodeVisual {
@@ -129,6 +135,17 @@ function edgeBaseOpacity(edge: GraphEdge): number {
   return edge.kind === "example" ? base * 0.5 : base;
 }
 
+const EDGE_CURVE_SEGMENTS = 28;
+
+// 糸の曲線（§12.3・inner-cosmos/index.htmlの実装を移植）。中点を「原点からの距離」に
+// 応じて外側に押し出すことで、宇宙の中心から見てゆるやかに膨らむ弧を描く
+function buildEdgeCurve(a: THREE.Vector3, b: THREE.Vector3): THREE.QuadraticBezierCurve3 {
+  const mid = a.clone().add(b).multiplyScalar(0.5);
+  const len = Math.max(mid.length(), 1);
+  mid.multiplyScalar(1 + 14 / len);
+  return new THREE.QuadraticBezierCurve3(a.clone(), mid, b.clone());
+}
+
 function makeLabel(text: string, colorCss: string): THREE.Sprite {
   const dpr = Math.min(devicePixelRatio || 1, 2);
   const fontPx = 30;
@@ -239,6 +256,9 @@ export default function UniverseScene({
   bornKey,
   lensKeys,
   focusRequest,
+  chamberKey,
+  travelRequest,
+  onArrived,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -253,6 +273,19 @@ export default function UniverseScene({
   const ringTexDoubleRef = useRef<THREE.CanvasTexture | null>(null);
   const clockRef = useRef(new THREE.Clock());
   const cameraFocusRef = useRef<{ until: number; pos: THREE.Vector3; distance?: number } | null>(null);
+  // 辿る（トラバース）アニメーション: 曲線に沿ってカメラを一定時間で動かす。
+  // cameraFocusRefは「固定点への収束」なので、時間駆動で経路を移動するこの用途には別枠を持つ
+  const travelRef = useRef<{
+    startT: number;
+    duration: number;
+    curve: THREE.QuadraticBezierCurve3;
+    toKey: string;
+    edgeId: string;
+  } | null>(null);
+  const onArrivedRef = useRef(onArrived);
+  useEffect(() => {
+    onArrivedRef.current = onArrived;
+  }, [onArrived]);
 
   // ── シーンの初期化（マウント時に1回だけ） ──
   useEffect(() => {
@@ -333,7 +366,6 @@ export default function UniverseScene({
     renderer.domElement.addEventListener("pointerup", onPointerUp);
 
     let raf = 0;
-    const tmpV = new THREE.Vector3();
     function animate() {
       raf = requestAnimationFrame(animate);
       const t = clockRef.current.getElapsedTime();
@@ -381,9 +413,10 @@ export default function UniverseScene({
           opacityMul = p;
           if (p >= 1) ev.birthStart = null;
         }
+        const curve = buildEdgeCurve(a.currentPos, endPos);
+        const points = curve.getPoints(EDGE_CURVE_SEGMENTS);
         const posAttr = ev.line.geometry.getAttribute("position") as THREE.BufferAttribute;
-        posAttr.setXYZ(0, a.currentPos.x, a.currentPos.y, a.currentPos.z);
-        posAttr.setXYZ(1, endPos.x, endPos.y, endPos.z);
+        points.forEach((p, i) => posAttr.setXYZ(i, p.x, p.y, p.z));
         posAttr.needsUpdate = true;
         // status=inferred（確認待ちの提案）の糸は点滅させる。ノードの点滅と周期を揃える
         const blink = ev.edge.inferred ? 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(t * 3.4)) : 1;
@@ -391,13 +424,22 @@ export default function UniverseScene({
 
         if (ev.particle) {
           const p = (t * ev.speed + ev.offset) % 1;
-          tmpV.lerpVectors(a.currentPos, b.currentPos, p);
-          ev.particle.position.copy(tmpV);
+          ev.particle.position.copy(curve.getPoint(p));
           ev.particle.material.opacity = 0.8 * opacityMul * blink;
         }
       });
 
-      if (cameraFocusRef.current) {
+      if (travelRef.current) {
+        const tr = travelRef.current;
+        const u = Math.min((t - tr.startT) / tr.duration, 1);
+        camera.position.copy(tr.curve.getPoint(u));
+        controls.target.copy(tr.curve.getPoint(Math.min(u + 0.05, 1)));
+        if (u >= 1) {
+          travelRef.current = null;
+          controls.enabled = true;
+          onArrivedRef.current?.(tr.toKey, tr.edgeId);
+        }
+      } else if (cameraFocusRef.current) {
         const focus = cameraFocusRef.current;
         controls.target.lerp(focus.pos, 0.05);
         if (focus.distance !== undefined) {
@@ -585,7 +627,9 @@ export default function UniverseScene({
       const color = e.inferred ? new THREE.Color("#e8e4ff") : ca.clone().lerp(cb, 0.5);
       const baseOpacity = edgeBaseOpacity(e);
 
-      const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
+      // 頂点数は固定（曲線サンプル点数）で確保し、実際の座標はanimate()で毎フレーム書き換える
+      const initialPoints = buildEdgeCurve(a, b).getPoints(EDGE_CURVE_SEGMENTS);
+      const geo = new THREE.BufferGeometry().setFromPoints(initialPoints);
       const mat = new THREE.LineBasicMaterial({
         color,
         transparent: true,
@@ -637,8 +681,12 @@ export default function UniverseScene({
   }, [clusters, nodes, edges, bornKey]);
 
   // ── 選択状態の反映（フォーカス表示） ──
+  // chamberKey（探索モード§12.2で潜っている星）がある間は、それを基準ノードとして扱い、
+  // 非隣接をより暗く・霧を濃くする（俯瞰の選択より深い没入感のため）
   useEffect(() => {
-    const selected = selectedKey ? nodes.find((n) => n.key === selectedKey) ?? null : null;
+    const chamberMode = !!chamberKey;
+    const refKey = chamberKey ?? selectedKey;
+    const selected = refKey ? nodes.find((n) => n.key === refKey) ?? null : null;
     const connected = new Set<string>();
     if (selected) {
       connected.add(selected.key);
@@ -647,12 +695,13 @@ export default function UniverseScene({
         if (e.target_key === selected.key) connected.add(e.source_key);
       });
     }
+    const dimOpacity = chamberMode ? 0.05 : 0.18;
     nodeVisuals.current.forEach((v, key) => {
       const passesLens = !lensKeys || lensKeys.has(key);
       const passesSelection = !selected || connected.has(key);
       const on = passesLens && passesSelection;
       // 実際のmaterial.opacityへの反映はanimateループ（点滅演出と合成するため）
-      v.focusOpacity = on ? 1 : 0.18;
+      v.focusOpacity = on ? 1 : dimOpacity;
       v.mesh.userData.focusScale = selected && key === selected.key ? 1.35 : 1;
     });
     edgeVisuals.current.forEach((ev) => {
@@ -660,11 +709,52 @@ export default function UniverseScene({
       const passesLens =
         !lensKeys || (lensKeys.has(ev.edge.source_key) && lensKeys.has(ev.edge.target_key));
       const base = edgeBaseOpacity(ev.edge);
-      let opacity = !selected ? base : touches ? Math.min(base * 2.6, 0.9) : base * 0.12;
+      let opacity = !selected ? base : touches ? Math.min(base * 2.6, 0.9) : base * (chamberMode ? 0.03 : 0.12);
       if (!passesLens) opacity *= 0.1;
       ev.baseOpacity = opacity;
     });
-  }, [selectedKey, nodes, edges, lensKeys]);
+
+    const scene = sceneRef.current;
+    const controls = controlsRef.current;
+    if (scene?.fog instanceof THREE.FogExp2) {
+      scene.fog.density = chamberMode ? 0.012 : 0.004;
+    }
+    if (controls) {
+      controls.autoRotate = !chamberMode;
+    }
+  }, [selectedKey, chamberKey, nodes, edges, lensKeys]);
+
+  // ── チェンバーに入った瞬間、カメラをその星の近くまで寄せる ──
+  useEffect(() => {
+    if (!chamberKey) return;
+    const v = nodeVisuals.current.get(chamberKey);
+    if (!v) return;
+    cameraFocusRef.current = {
+      until: clockRef.current.getElapsedTime() + 2,
+      pos: v.targetPos.clone(),
+      distance: 20,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chamberKey]);
+
+  // ── 通路をタップして辿る要求（§12.3）。曲線に沿ってカメラを飛ばす ──
+  useEffect(() => {
+    if (!travelRequest) return;
+    const from = nodeVisuals.current.get(travelRequest.fromKey);
+    const to = nodeVisuals.current.get(travelRequest.toKey);
+    const controls = controlsRef.current;
+    if (!from || !to || !controls) return;
+    const curve = buildEdgeCurve(from.currentPos, to.currentPos);
+    controls.enabled = false;
+    travelRef.current = {
+      startT: clockRef.current.getElapsedTime(),
+      duration: 1.6,
+      curve,
+      toKey: travelRequest.toKey,
+      edgeId: travelRequest.edgeId,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [travelRequest]);
 
   // ── レンズが変わったら、その星々が画面に映るようカメラを向ける ──
   // （クラスタは3D空間上で離れた領域に配置されているため、明るくなっても

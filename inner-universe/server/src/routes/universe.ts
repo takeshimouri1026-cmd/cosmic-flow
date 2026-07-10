@@ -1,7 +1,11 @@
 import { Router } from "express";
+import type Anthropic from "@anthropic-ai/sdk";
+import { anthropic } from "../anthropicClient.js";
 import { supabase } from "../db.js";
-import { findEdgeByPair, getGraph, getUniverse } from "../graph.js";
+import { buildPathText, findEdgeByPair, getGraph, getUniverse } from "../graph.js";
 import { runInterviewTurn } from "../interviewEngine.js";
+import { NARRATION_SYSTEM_PROMPT } from "../narrationPrompt.js";
+import type { ExpeditionStep } from "../types.js";
 
 const EDGE_KINDS = ["influence", "example", "resonance"] as const;
 const EDGE_KIND_LABEL: Record<string, string> = {
@@ -151,6 +155,49 @@ universeRouter.post("/:id/interview", async (req, res) => {
     interviewLocks.delete(universeId);
     res.end();
   }
+});
+
+// 探索モード（§12.5）: 経路の内省ナレーションを単発生成する。ツールもストリーミングも不要
+universeRouter.post("/:id/narrate-path", async (req, res) => {
+  const path = req.body?.path as ExpeditionStep[] | undefined;
+  if (!Array.isArray(path) || path.length === 0) {
+    res.status(400).json({ error: "path が必要です" });
+    return;
+  }
+  try {
+    const { nodes, edges } = await getGraph(req.params.id);
+    const pathText = buildPathText(nodes, edges, path);
+    const message = await anthropic.messages.create({
+      model: "claude-sonnet-5",
+      max_tokens: 600,
+      system: NARRATION_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: pathText }],
+    });
+    const textBlock = message.content.find((b): b is Anthropic.TextBlock => b.type === "text");
+    res.json({ narration: textBlock?.text ?? "" });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// 探索モード（§12.5）: 探検の終わりに経路とナレーションを保存する
+universeRouter.post("/:id/expeditions", async (req, res) => {
+  const path = req.body?.path as ExpeditionStep[] | undefined;
+  const narration = typeof req.body?.narration === "string" ? req.body.narration : null;
+  if (!Array.isArray(path) || path.length === 0) {
+    res.status(400).json({ error: "path が必要です" });
+    return;
+  }
+  const { data, error } = await supabase
+    .from("expeditions")
+    .insert({ universe_id: req.params.id, path, narration })
+    .select()
+    .single();
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+  res.json({ expedition: data });
 });
 
 export const nodeRouter = Router();
@@ -319,6 +366,12 @@ edgeRouter.patch("/:id", async (req, res) => {
       res.status(409).json({ error: `既に逆向きの糸 ${nextTargetKey}→${nextSourceKey} があります。resonanceは向きを問いません` });
       return;
     }
+  }
+
+  // 探索モード（§12.3）: 「この糸、確かにある」ワンタップでの強化。LLMを通さない直接更新
+  if (req.body?.reinforce === true) {
+    patch.strength = Math.min((current.strength as number) + 0.15, 1);
+    if (current.inferred) patch.inferred = false;
   }
 
   if (Object.keys(patch).length === 0) {

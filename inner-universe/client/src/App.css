@@ -196,6 +196,49 @@
   max-width: 68px;
 }
 
+/* 探索モード（§12） */
+.card.chamber-panel button.conn-row.chamber-passage {
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.card.chamber-panel button.conn-row.chamber-passage:hover {
+  background: rgba(167, 139, 250, 0.12);
+}
+.chamber-guide {
+  font-size: 10.5px;
+  color: #8b84a8;
+  margin: 8px 0 4px;
+}
+.chamber-breadcrumbs {
+  margin-top: 10px;
+  font-size: 11px;
+  color: #9086ac;
+  line-height: 1.8;
+}
+.chamber-crumb {
+  background: none;
+  border: none;
+  color: #cfc7ea;
+  font-size: 11px;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.chamber-memo {
+  margin-top: 10px;
+}
+.chamber-narration {
+  margin-top: 8px;
+  font-size: 12px;
+  font-style: italic;
+  color: #b7aed6;
+  line-height: 1.8;
+}
+
 .legend button.lens {
   background: none;
   border: 1px solid transparent;
