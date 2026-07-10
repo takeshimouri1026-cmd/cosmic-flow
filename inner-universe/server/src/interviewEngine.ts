@@ -86,7 +86,13 @@ async function execUpdateNode(
   if (input.size !== null) patch.size = input.size;
   if (input.cluster !== null) patch.cluster = input.cluster;
   if (input.description !== null) patch.description = input.description;
-  if (input.status !== null) patch.status = input.status;
+  // スキーマ側でenum制約を掛けられない（union型+enumはAPIが400を返す）ためここで検証
+  if (input.status !== null) {
+    if (input.status !== "confirmed" && input.status !== "inferred") {
+      return { ok: false, error: `status は 'confirmed' か 'inferred'（受け取った値: ${input.status}）` };
+    }
+    patch.status = input.status;
+  }
 
   const { data, error } = await supabase
     .from("nodes")
@@ -223,8 +229,10 @@ export async function runInterviewTurn(universeId: string, userText: string, sen
       send({ type: "text", text: delta });
     });
 
+    // ここでSSEにerrorを流すとroutes側のcatchと二重になる。ログのみに留め、
+    // finalMessage()のrejectをroutes側で一元的にエラーイベント化する
     stream.on("error", (err) => {
-      send({ type: "error", message: err instanceof Error ? err.message : String(err) });
+      console.error("interview stream error:", err instanceof Error ? err.message : err);
     });
 
     const finalMessage = await stream.finalMessage();

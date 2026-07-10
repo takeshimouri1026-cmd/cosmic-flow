@@ -52,7 +52,12 @@ export const INTERVIEW_TOOLS: Anthropic.Tool[] = [
         size: { type: ["integer", "null"] },
         cluster: { type: ["string", "null"] },
         description: { type: ["string", "null"] },
-        status: { type: ["string", "null"], enum: ["confirmed", "inferred", null] },
+        // 注意: type が union（["string","null"]）のとき enum を併記するとAPIが
+        // Invalid schema で400を返す。許容値はdescriptionで指示しサーバ側で検証する
+        status: {
+          type: ["string", "null"],
+          description: "変更する場合は 'confirmed' か 'inferred'。変更しないなら null",
+        },
       },
       required: ["key", "label", "size", "cluster", "description", "status"],
       additionalProperties: false,

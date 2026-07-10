@@ -204,7 +204,7 @@ const tools = [
         size: { type: ["integer","null"] },
         cluster: { type: ["string","null"] },
         description: { type: ["string","null"] },
-        status: { type: ["string","null"], enum: ["confirmed","inferred", null] }
+        status: { type: ["string","null"], description: "'confirmed' | 'inferred' | null（union型にenumを併記するとAPIが400を返すため、許容値はdescriptionで指示しサーバ側で検証する）" }
       },
       required: ["key","label","size","cluster","description","status"],
       additionalProperties: false
@@ -262,6 +262,7 @@ const tools = [
 - `POST /api/universe/:id/booklog` → サーバが `https://booklog.jp/users/takeshimouri/all?page=N` を2〜4ページ取得（進捗ページ番号はuniverses拡張カラムかreportsに記録。既読: p1,2,5）
 - Sonnet 5にページ内容＋グラフダイジェストを渡し、**既存構造と強く共鳴する本だけ** `add_node`/`add_edge`（status=inferred, source=booklog）で提案させる
 - UIは「本棚から新しい星の候補が届きました」→ 1件ずつ 採用/見送り のカード（スワイプ式だと楽しい）
+- **出典リンク（ユーザー要望 2026-07-10）**: `nodes` に `url text` カラムを追加し、情報の出所がある星（ブクログの本のページ等）は詳細パネルにリンクを表示する。将来のコネクタ由来ノード（§10）も同じカラムを使う
 
 ## 6. 移行（最初の実装タスクの一部）
 

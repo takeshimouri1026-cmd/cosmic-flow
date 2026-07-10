@@ -45,8 +45,11 @@ export default function InterviewPanel({
   return (
     <div className="interview-panel">
       <div className="interview-log">
-        {lines.length === 0 && pendingQuestion && (
-          <div className="chat-line assistant">{pendingQuestion}</div>
+        {lines.length === 0 && (
+          <div className="chat-line assistant">
+            {pendingQuestion ??
+              "この宇宙は、これまでの対話から生まれた星々で始まっています。いま心にあること、最近熱を持っていることを、自由に話してください。"}
+          </div>
         )}
         {lines.map((l, i) => (
           <div key={i} className={`chat-line ${l.role}`}>

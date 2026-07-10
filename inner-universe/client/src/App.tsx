@@ -72,7 +72,13 @@ export default function App() {
       return;
     }
     if (event.type === "error") {
-      setError(event.message);
+      // 全画面エラーにせず、チャット欄の中で知らせる（宇宙は生きたまま）
+      streamingTextRef.current = "";
+      setChatLines((prev) => [
+        ...prev.map((l) => ({ role: l.role, text: l.text })),
+        { role: "assistant" as const, text: `⚠ ごめんなさい、応答の途中で問題が起きました。もう一度送ってみてください。（${event.message}）` },
+      ]);
+      setStreaming(false);
       return;
     }
     if (event.type === "done") {
@@ -91,8 +97,15 @@ export default function App() {
       try {
         await streamInterview(graph.universe.id, text, applyEvent);
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        const message = err instanceof Error ? err.message : String(err);
+        setChatLines((prev) => [
+          ...prev,
+          { role: "assistant" as const, text: `⚠ 送信に失敗しました。少し待ってもう一度試してください。（${message}）` },
+        ]);
+      } finally {
+        // done イベントが届かないまま接続が切れても入力欄が固まらないように
         setStreaming(false);
+        streamingTextRef.current = "";
       }
     },
     [graph, applyEvent]
