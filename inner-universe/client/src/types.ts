@@ -1,5 +1,6 @@
 export type NodeType = "belief" | "experience" | "knowledge" | "meta";
 export type NodeStatus = "confirmed" | "inferred";
+export type EdgeKind = "influence" | "example" | "resonance";
 
 export interface GraphNode {
   id: string;
@@ -12,6 +13,7 @@ export interface GraphNode {
   description: string;
   status: NodeStatus;
   source: string;
+  user_edited: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -21,6 +23,7 @@ export interface GraphEdge {
   universe_id: string;
   source_key: string;
   target_key: string;
+  kind: EdgeKind;
   strength: number;
   description: string;
   inferred: boolean;
@@ -56,6 +59,7 @@ export type InterviewEvent =
   | { type: "node_added"; node: GraphNode }
   | { type: "edge_added"; edge: GraphEdge }
   | { type: "node_updated"; node: GraphNode }
+  | { type: "edge_removed"; edge_id: string }
   | { type: "pending_question"; question: string }
   | { type: "error"; message: string }
   | { type: "done" };

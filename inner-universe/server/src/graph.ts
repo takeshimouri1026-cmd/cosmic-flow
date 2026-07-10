@@ -30,12 +30,36 @@ export async function getGraph(universeId: string) {
 
 export function buildGraphDigest(
   nodes: GraphNode[],
+  edges: GraphEdge[],
   pendingQuestion: string | null
 ): string {
   const lines = nodes.map(
     (n) => `${n.key}\t${n.label}\t${n.type}\t${n.cluster}\tsize=${n.size}\t${n.status}`
   );
   const body = lines.length ? lines.join("\n") : "(まだ星がありません)";
+  const edgeLines = edges.map(
+    (e) => `${e.source_key}->${e.target_key}\t${e.kind}\tstrength=${e.strength}\t${e.description}`
+  );
+  const edgeBody = edgeLines.length ? edgeLines.join("\n") : "(まだ糸がありません)";
   const pending = pendingQuestion ? `\npending_question: ${pendingQuestion}` : "";
-  return `<graph_digest>\n${body}${pending}\n</graph_digest>`;
+  return `<graph_digest>\n${body}\n--- edges (source->target, kind) ---\n${edgeBody}${pending}\n</graph_digest>`;
+}
+
+// resonanceは向きに意味がないため、挿入時にサーバ側で逆向きの既存行もチェックして重複を防ぐ（§2.1）
+export async function findEdgeByPair(
+  universeId: string,
+  sourceKey: string,
+  targetKey: string,
+  excludeId?: string
+): Promise<{ id: string } | null> {
+  let query = supabase
+    .from("edges")
+    .select("id")
+    .eq("universe_id", universeId)
+    .eq("source_key", sourceKey)
+    .eq("target_key", targetKey);
+  if (excludeId) query = query.neq("id", excludeId);
+  const { data, error } = await query.maybeSingle();
+  if (error) throw error;
+  return data as { id: string } | null;
 }

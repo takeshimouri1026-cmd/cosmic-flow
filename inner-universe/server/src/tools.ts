@@ -26,17 +26,22 @@ export const INTERVIEW_TOOLS: Anthropic.Tool[] = [
   {
     name: "add_edge",
     description:
-      "影響関係の糸を張る。source→target=「sourceがtargetに影響した」。本人が語った関係はinferred=false、こちらの構造的な読みはinferred=true（description末尾に「（推定）」）。",
+      "関係の糸を張る（§2.1）。kind=influence:「sourceがtargetを形づくった」（本人の語りが『〜のおかげで/〜から生まれた』）。kind=example:「sourceはtargetのあらわれ・一例・象徴」（source=具体、target=抽象。語りが『〜はその一例/象徴』）。kind=resonance:「互いに響き合う」（向きを決めきれないときは推測で片方に倒さずこれを使う）。本人が語った関係はinferred=false、こちらの構造的な読みはinferred=true（description末尾に「（推定）」）。",
     input_schema: {
       type: "object",
       properties: {
         source_key: { type: "string" },
         target_key: { type: "string" },
+        kind: {
+          type: "string",
+          enum: ["influence", "example", "resonance"],
+          description: "関係タイプ。迷ったらinfluence。向きを決めきれないならresonance",
+        },
         strength: { type: "number", description: "0〜1" },
         description: { type: "string" },
         inferred: { type: "boolean" },
       },
-      required: ["source_key", "target_key", "strength", "description", "inferred"],
+      required: ["source_key", "target_key", "kind", "strength", "description", "inferred"],
       additionalProperties: false,
     },
   },
@@ -60,6 +65,21 @@ export const INTERVIEW_TOOLS: Anthropic.Tool[] = [
         },
       },
       required: ["key", "label", "size", "cluster", "description", "status"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "remove_edge",
+    description:
+      "既存の糸を切る。ユーザーが「その関係はもう無い/違う」と言った時、または再編みの結果その糸が構造上不要と判断した時に使う。",
+    input_schema: {
+      type: "object",
+      properties: {
+        source_key: { type: "string" },
+        target_key: { type: "string" },
+        reason: { type: "string", description: "なぜ切るか" },
+      },
+      required: ["source_key", "target_key", "reason"],
       additionalProperties: false,
     },
   },

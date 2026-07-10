@@ -1,9 +1,10 @@
-# Inner Universe — アプリ設計書 v1.2
+# Inner Universe — アプリ設計書 v1.4
 
 *2026-07-09 Fable 5設計。実装はSonnet 5のセッションがこのドキュメントを読んで行う。*
 *v1.1: 外部情報源コネクタ（§10）と好奇心エンジン（§11）を追加、フェーズ計画を更新。*
 *v1.2: 探索モード＝一人称の洞窟探検（§13）を追加。俯瞰（三人称）と探索（一人称）の2モード構成が確定。*
 *v1.3 (2026-07-10): 手入れモード（§13）とレンズ（§13.4）を追加しフェーズ2aに設定。探索モードはフェーズ2bへ。§12内の節番号のズレ（13.x→12.x）を修正。*
+*v1.4 (2026-07-11): 糸の意味論（§2.1）を追加——「源流」の定義を明文化し、edgesに関係タイプkind（influence/example/resonance）を導入。§3.3・§12・§13.5に反映。**フェーズ2a追補**として2b着手前に実装する。*
 
 ## 実装状況（2026-07-10 追記）
 
@@ -16,7 +17,7 @@
 - Supabaseの新APIキー体系（Publishable/Secret key）を使用。`SUPABASE_SERVICE_KEY`には`sb_secret_...`形式のSecret keyを設定する（従来の`service_role`キーと役割は同じ）
 - ローカル動作確認は完了（Supabase実データ・Anthropic APIキー設定済み、`npm run seed`→`dev:server`/`dev:client`で疎通確認済み）。ブラウザでの実際のインタビュー体験（星の誕生・確定/削除UI）はユーザー自身の環境での最終確認待ち
 - フェーズ2着手時は、`inner-universe/client/src/UniverseScene.tsx`（3Dビューア）・`inner-universe/server/src/interviewEngine.ts`（インタビューSSEループ）が主な拡張ポイントになる（§12探索モード・§13手入れモードはこの2ファイル＋DetailPanel.tsxに機能追加する形になる見込み）
-- **次の実装対象はフェーズ2a＝§13手入れモード＋レンズ**（2026-07-10確定。指示例は§14）。エッジ描画の曲線化（§12の前提修正）は2bで行う
+- フェーズ2a（§13手入れモード＋レンズ）は実装・実API確認済み（2026-07-11。追加でStarList全星一覧・ClusterManager・源流/サブ視覚化も実装済み、詳細はメモリ`project_inner_universe.md`）。**次の実装対象はフェーズ2a追補＝糸の意味論（§2.1・§13.5。指示例は§14）**。エッジ描画の曲線化（§12の前提修正）は2bで行う
 - 3D側の注意: React移植版のエッジは直線（`THREE.Line`2点）。§12.3の「既存の`QuadraticBezierCurve3`を流用」は旧inner-cosmos実装の話で、**2b着手時にエッジ描画ごと曲線を復活させてカメラパスと共有する**こと
 
 ## 0. コンセプト
@@ -126,6 +127,33 @@ create table reports (       -- 編集会議の成果物
 
 RLSはフェーズ3まで無効でよい（シングルユーザー・サーバ経由アクセスのみ）。
 
+### 2.1 糸の意味論 — 「源流」の定義と関係タイプ kind（v1.4追加、フェーズ2a追補）
+
+*2026-07-11設計。源流/サブ視覚化で「奥田民生→音や響きが大事」の向きに本人が違和感を持ったことが発端。原因は向きの誤りではなく、「影響した」一種類しかない関係タイプの混線だった。*
+
+**源流の定義（明文化）**: A→B の糸は「**Bを『なんで?』と掘ったとき、Aが答えの一部として現れる**」ことを意味する。時間的な形成順でも影響力の大小でもない。これは客観的な歴史ではなく**今日の本人の語りの構造**であり、自己理解が変われば向きは編み直されてよい（向きやkindの変更履歴自体が、自己理解の変化ログになる）。
+
+edgesに関係タイプ `kind` を追加する（既存DBへはALTER。supabase.sqlに追記すること）:
+
+```sql
+alter table edges add column kind text not null default 'influence'
+  check (kind in ('influence','example','resonance'));
+```
+
+| kind | 向き | 意味 | UI表記（文で見せる） |
+|---|---|---|---|
+| `influence` | あり | sourceがtargetを**形づくった**。「なんで?」の答えが現れる方向 | 「AがBを形づくった」 |
+| `example` | あり（抽象度の軸） | source=具体は target=抽象の**あらわれ・一例・象徴** | 「AはBのあらわれ」 |
+| `resonance` | なし | 互いに強め合う。**向きを決めきれない関係の正式な受け皿** | 「AとBは響き合う」 |
+
+原則:
+
+- kindは**構造計算と描画の分岐にだけ**使う。ニュアンスは従来どおりdescriptionが担う。**3種で打ち止め**（タイプが増えるほどインタビュー中のAIと手入れ中の本人に分類コストがかかる）
+- **源流/サブ判定（client/src/sourceScore.ts のネット次数=出−入）はinfluenceの糸だけで計算する。** example/resonanceは源流性に一切効かせない（奥田民生の糸をexampleに直せば輪が消えて実感と一致する、が検収基準）
+- `example`の向きの規約は**source=具体（あらわれ）→ target=抽象（本体）**。既存の「具体→価値観」のinfluence糸は向きを変えずkindだけ変えれば直せる
+- `resonance`は向きに意味がないが、行としてはsource/targetを持つ。unique制約 `(universe_id, source_key, target_key)` はA→BとB→Aを別物と見なすため、**挿入時にサーバで逆向きの既存行もチェック**して重複を防ぐ
+- **既存エッジの一括移行はしない**（全部デフォルトのinfluenceのまま）。本人がStarList・詳細パネルで一本ずつ編み直すのが正——どの糸を「あらわれ」に変えたか自体が一級の自己理解ログ。AIによる一括再分類の提案は編集会議（§4）の仕事（「再編みは局所、再構成は編集会議」の原則どおり）
+
 ## 3. インタビューエンジン（核心部）
 
 ### 3.1 モデルとSDK
@@ -180,18 +208,19 @@ const tools = [
   },
   {
     name: "add_edge",
-    description: "影響関係の糸を張る。source→target=「sourceがtargetに影響した」。本人が語った関係はinferred=false、こちらの構造的な読みはinferred=true（description末尾に「（推定）」）。",
+    description: "関係の糸を張る（§2.1）。kind=influence:「sourceがtargetを形づくった」（本人の語りが『〜のおかげで/〜から生まれた』）。kind=example:「sourceはtargetのあらわれ・一例・象徴」（source=具体、target=抽象。語りが『〜はその一例/象徴』）。kind=resonance:「互いに響き合う」（向きを決めきれないときは推測で片方に倒さずこれを使う）。本人が語った関係はinferred=false、こちらの構造的な読みはinferred=true（description末尾に「（推定）」）。",
     strict: true,
     input_schema: {
       type: "object",
       properties: {
         source_key: { type: "string" },
         target_key: { type: "string" },
+        kind:       { type: "string", enum: ["influence","example","resonance"], description: "関係タイプ。迷ったらinfluence。向きを決めきれないならresonance" },
         strength:   { type: "number", description: "0〜1" },
         description:{ type: "string" },
         inferred:   { type: "boolean" }
       },
-      required: ["source_key","target_key","strength","description","inferred"],
+      required: ["source_key","target_key","kind","strength","description","inferred"],
       additionalProperties: false
     }
   },
@@ -415,9 +444,10 @@ create table questions (
 
 - カメラがその星の位置までズームイン。星は目の前の**発光する空間（チェンバー）**になる
 - 表示するのは: この星の説明文＋**直接つながる星々だけ**。それぞれが「通路の先の光」として周囲に浮かぶ。他の全ノードはフォグの彼方に沈める（既存のFogExp2を強める＋非隣接ノードのopacityを落とすだけで実現可能）
-- 各通路には**エッジのdescriptionを浮かべる**（「抑圧が剥がれた先に開けた宇宙の体感」等）。通路の向きを区別する:
-  - **⬆ 源流へ**（incoming: この星を形づくったもの）——「なんで?」を掘る方向
-  - **⬇ 流れの先へ**（outgoing: この星が生んだもの）
+- 各通路には**エッジのdescriptionを浮かべる**（「抑圧が剥がれた先に開けた宇宙の体感」等）。通路は**3群**に分ける（§2.1のkindに対応）:
+  - **⬆ 源流へ**（incoming の influence: この星を形づくったもの）——「なんで?」を掘る方向。**この群に入るのはinfluenceの糸だけ**（例示の糸が混ざると、掘っても答えにならない道ができてしまう）
+  - **⬇ 流れの先へ**（outgoing の influence: この星が生んだもの）
+  - **✦ あらわれ・響き**（example / resonance）——掘る道ではなく**横に開く窓**。抽象の星から見れば「この価値観が息づいている場所たち」、具体の星から見れば「この星に宿っているもの」
 - 「なんで私はこれを?」という問いには源流方向が答えになる、というガイドをUIに薄く出す
 
 ### 12.3 辿る（トラバース）
@@ -432,7 +462,7 @@ create table questions (
 
 チェンバーには通路のほかに、**まだ照らされていない穴**を表示する。ルールベースで検出できる構造的空白（LLM不要・クライアント計算）:
 
-- 信念なのに源流エッジが少ない（形成史が空白）
+- 信念なのに源流エッジが少ない（形成史が空白。数えるのはincomingのinfluenceのみ——§2.1）
 - サイズが大きいのに他クラスタとつながっていない
 - 語彙上は近いのに糸が無い星のペア（編集会議が候補を事前計算）
 
@@ -505,6 +535,30 @@ create table expeditions (
 - 同じ仕組みで**「推定」レンズ**（status=inferredの星だけ）も追加 — 「確認待ちの提案がどこに溜まっているか」が一目で見える
 - 完全クライアント内（APIコストゼロ）。**視点を変えることは問いを変えること** — レンズは俯瞰モードにおける問いの切り替えであり、将来「最近生まれた星」「本から来た星」「よく訪れる星」等に同じUIで拡張する
 
+### 13.5 糸の意味論への対応（フェーズ2a追補、v1.4追加）
+
+*フェーズ2a実装後・2b着手前に行う。前提は§2.1（源流の定義・kind 3種・原則）。§12.2の通路3群構成はこの追補が土台になる。*
+
+**DB**: §2.1のALTER文を `supabase.sql` に追記し、READMEに実行手順を記載（`user_edited` 追加時と同じ手順）。
+
+**サーバ**:
+
+- `add_edge` ツールに `kind` を追加（§3.3更新済み。単純な `type:"string"` + `enum` なのでunion+enum併記の罠には**当たらない**）
+- `POST /api/edges`（手入れの糸張り）のbodyに `kind` を追加。`kind='resonance'` のときは逆向き `(target,source)` の既存行をチェックして重複を拒否
+- `PATCH /api/edges/:id` を新設: `kind` の変更と向きの反転（source/target入れ替え）。**LLMには流さない直接更新**（StarListの⇄と同じ「まとめてレビュー」用途。現行の⇄の即時反映と同じ扱い）
+- systemPromptにkindの判定基準を追記: 語りが「〜のおかげで/〜から生まれた」→influence、「〜はその一例/象徴」→example、**向きを決めきれないときは推測で片方に倒さずresonance**。手入れ応答で既存の糸のkind変更を勧めたいときは、直接変えずチャットで提案する（言葉の主権と同じ扱い）
+- グラフダイジェスト・`<user_action>` ブロックにkindを含める（AIが関係の種類を読めるように）
+
+**クライアント**:
+
+- `sourceScore.ts`: ネット次数（出−入）の計算対象を **kind='influence' のエッジのみ**に限定（§2.1）。example/resonanceは輪・色の濃さに影響しない
+- `TiePicker`（糸を張る）: 関係を**文で**選ぶUIを追加——「AがBを形づくった / AはBのあらわれ / AとBは響き合う」（デフォルト=influence）
+- `StarList` の⇄ボタンを「関係を編む」小UIに拡張: 向きの反転＋kindの変更（従来どおり即時反映のみ、AIには流さない）。詳細パネルの「つながり」一覧にも同じ操作を置く
+- つながり一覧のグループを3群に: **⬆源流（influence in）/ ⬇流れの先（influence out）/ ✦あらわれ・響き（example/resonance）**——§12.2チェンバーDOMシートの原型として
+- 3D描画: influence=現行どおり、example=細く・淡く、resonance=向きの表現なし。**控えめに**（3Dは光と雰囲気に徹する方針どおり。凝った矢印などは足さない）
+
+**移行**: 既存エッジは全てデフォルトの `influence` のまま。一括再分類はしない（§2.1の原則）。
+
 ## 14. 実装セッションへの指示（このドキュメントの使い方）
 
 新しいClaude Codeチャット（Sonnet 5）で:
@@ -514,6 +568,10 @@ create table expeditions (
 フェーズ2a（手入れモード＋レンズ）の指示例:
 
 > inner-universe/DESIGN.md の冒頭「実装状況」と §13（手入れモード）を読んで、フェーズ2aを実装して。DB変更は supabase.sql にALTER文を追記し、READMEに実行手順を書くこと。動作確認は実API（Anthropic/Supabase）で「星の言葉を直す→AIの応答がチャットに届く」「糸を切る→再編み提案が点滅で届く」まで通すこと（モック確認だけで完了としない。使い捨てのテスト宇宙を作って確認し、終わったら消す）。ツール定義でunion型にenumを併記しないこと（§3.3の注意書き参照）。
+
+フェーズ2a追補（糸の意味論）の指示例:
+
+> inner-universe/DESIGN.md の冒頭「実装状況」と §2.1（糸の意味論）・§13.5（フェーズ2a追補）を読んで、糸の関係タイプ kind（influence/example/resonance）を実装して。§3.3の add_edge ツール定義は更新済みなのでコードを同期すること。DB変更（edges.kind）は supabase.sql にALTER文を追記し、READMEに実行手順を書くこと（実行はユーザーがSupabase SQL Editorで行う）。動作確認は実API（Anthropic/Supabase）で、使い捨てのテスト宇宙を作って (1)TiePickerで「あらわれ」を選んで糸を張る→AIの応答がチャットに届く、(2)influenceの糸を1本exampleに変える→張り元の星の輪（源流表示）が消える、の両方を通すこと（終わったらテスト宇宙は消す）。既存エッジの一括再分類はしないこと（§2.1）。
 
 実装上の注意（Claude API周り、2026-07時点の正確な仕様）:
 - モデルID: `claude-sonnet-5` / `claude-opus-4-8`（日付サフィックスを付けない）

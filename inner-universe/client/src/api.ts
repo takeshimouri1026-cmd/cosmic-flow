@@ -1,4 +1,4 @@
-import type { GraphState, InterviewEvent, Universe } from "./types";
+import type { Cluster, EdgeKind, GraphState, InterviewEvent, Universe } from "./types";
 
 const APP_SECRET = import.meta.env.VITE_APP_SHARED_SECRET as string | undefined;
 
@@ -28,6 +28,24 @@ export async function fetchGraph(universeId: string): Promise<GraphState> {
   return asJson<GraphState>(res);
 }
 
+export async function createCluster(universeId: string, label: string, color: string): Promise<{ cluster: Cluster }> {
+  const res = await fetch(`/api/universe/${universeId}/clusters`, {
+    method: "POST",
+    headers: headers({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ label, color }),
+  });
+  return asJson(res);
+}
+
+export async function renameCluster(universeId: string, key: string, label: string): Promise<{ cluster: Cluster }> {
+  const res = await fetch(`/api/universe/${universeId}/clusters/${key}`, {
+    method: "PATCH",
+    headers: headers({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ label }),
+  });
+  return asJson(res);
+}
+
 export async function confirmNode(nodeId: string) {
   const res = await fetch(`/api/nodes/${nodeId}/confirm`, { method: "POST", headers: headers() });
   return asJson(res);
@@ -36,6 +54,70 @@ export async function confirmNode(nodeId: string) {
 export async function rejectNode(nodeId: string) {
   const res = await fetch(`/api/nodes/${nodeId}/reject`, { method: "POST", headers: headers() });
   return asJson(res);
+}
+
+export async function patchNode(nodeId: string, patch: { label?: string; description?: string }) {
+  const res = await fetch(`/api/nodes/${nodeId}`, {
+    method: "PATCH",
+    headers: headers({ "Content-Type": "application/json" }),
+    body: JSON.stringify(patch),
+  });
+  return asJson(res);
+}
+
+export async function createEdge(
+  universeId: string,
+  sourceKey: string,
+  targetKey: string,
+  description: string,
+  opts?: { strength?: number; inferred?: boolean; kind?: EdgeKind }
+) {
+  const res = await fetch(`/api/edges`, {
+    method: "POST",
+    headers: headers({ "Content-Type": "application/json" }),
+    body: JSON.stringify({
+      universe_id: universeId,
+      source_key: sourceKey,
+      target_key: targetKey,
+      description,
+      ...opts,
+    }),
+  });
+  return asJson(res);
+}
+
+export async function deleteEdge(edgeId: string) {
+  const res = await fetch(`/api/edges/${edgeId}`, { method: "DELETE", headers: headers() });
+  return asJson(res);
+}
+
+// 糸の関係を編む（§13.5）: kindの変更・向きの反転。LLMには流さない直接更新
+export async function patchEdge(edgeId: string, patch: { kind?: EdgeKind; reverse?: boolean }) {
+  const res = await fetch(`/api/edges/${edgeId}`, {
+    method: "PATCH",
+    headers: headers({ "Content-Type": "application/json" }),
+    body: JSON.stringify(patch),
+  });
+  return asJson(res);
+}
+
+export type UserAction =
+  | { kind: "edit_node"; key: string; field: "label" | "description"; before: string; after: string }
+  | { kind: "cut_edge"; source_key: string; target_key: string; reason: string }
+  | { kind: "tie_edge"; source_key: string; target_key: string; description: string; edgeKind: EdgeKind }
+  | { kind: "plant_node"; name: string; comment: string };
+
+export async function streamAction(
+  universeId: string,
+  action: UserAction,
+  onEvent: (event: InterviewEvent) => void
+): Promise<void> {
+  const res = await fetch(`/api/universe/${universeId}/interview`, {
+    method: "POST",
+    headers: headers({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ action }),
+  });
+  await consumeSse(res, onEvent);
 }
 
 export async function streamInterview(
@@ -50,6 +132,10 @@ export async function streamInterview(
     body: JSON.stringify({ text }),
     signal,
   });
+  await consumeSse(res, onEvent);
+}
+
+async function consumeSse(res: Response, onEvent: (event: InterviewEvent) => void): Promise<void> {
   if (!res.ok || !res.body) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? `HTTP ${res.status}`);

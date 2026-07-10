@@ -66,3 +66,12 @@ create table if not exists reports (
 );
 
 -- フェーズ1はシングルユーザー・サーバ経由アクセスのみのため RLS は無効のままでよい
+
+-- フェーズ2a: 手入れモード（§13）
+-- ユーザーが直接書き換えたノードはAIによる上書き(update_node)を拒否するためのフラグ
+alter table nodes add column if not exists user_edited boolean not null default false;
+
+-- フェーズ2a追補: 糸の意味論（§2.1）
+-- 関係タイプ。既存エッジは全てデフォルトのinfluenceのまま（一括再分類はしない）
+alter table edges add column if not exists kind text not null default 'influence'
+  check (kind in ('influence','example','resonance'));

@@ -1,7 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { anthropic } from "./anthropicClient.js";
 import { supabase } from "./db.js";
-import { buildGraphDigest, getGraph, getUniverse } from "./graph.js";
+import { buildGraphDigest, findEdgeByPair, getGraph, getUniverse } from "./graph.js";
 import { loadMessages, saveMessage } from "./messages.js";
 import { INTERVIEW_TOOLS } from "./tools.js";
 import { INTERVIEWER_SYSTEM_PROMPT } from "./systemPrompt.js";
@@ -48,17 +48,31 @@ async function execAddEdge(
   input: {
     source_key: string;
     target_key: string;
+    kind: string;
     strength: number;
     description: string;
     inferred: boolean;
   }
 ): Promise<{ ok: true; edge: GraphEdge } | { ok: false; error: string }> {
+  if (input.kind !== "influence" && input.kind !== "example" && input.kind !== "resonance") {
+    return { ok: false, error: `kind は 'influence' / 'example' / 'resonance' のいずれか（受け取った値: ${input.kind}）` };
+  }
+  if (input.kind === "resonance") {
+    const reverse = await findEdgeByPair(universeId, input.target_key, input.source_key);
+    if (reverse) {
+      return {
+        ok: false,
+        error: `既に逆向きの糸 ${input.target_key}->${input.source_key} が存在します。resonanceは向きを問わないので新しく張る必要はありません`,
+      };
+    }
+  }
   const { data, error } = await supabase
     .from("edges")
     .insert({
       universe_id: universeId,
       source_key: input.source_key,
       target_key: input.target_key,
+      kind: input.kind,
       strength: input.strength,
       description: input.description,
       inferred: input.inferred,
@@ -81,6 +95,21 @@ async function execUpdateNode(
     status: string | null;
   }
 ): Promise<{ ok: true; node: GraphNode } | { ok: false; error: string }> {
+  const { data: existing, error: fetchErr } = await supabase
+    .from("nodes")
+    .select("user_edited")
+    .eq("universe_id", universeId)
+    .eq("key", input.key)
+    .single();
+  if (fetchErr) return { ok: false, error: fetchErr.message };
+  if (existing.user_edited && (input.label !== null || input.description !== null)) {
+    return {
+      ok: false,
+      error:
+        "このノードの言葉は本人が直接編集済みです（user_edited=true）。label/descriptionは上書きできません。変えるべきだと思うなら、応答の中で本人に提案してください。",
+    };
+  }
+
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (input.label !== null) patch.label = input.label;
   if (input.size !== null) patch.size = input.size;
@@ -103,6 +132,23 @@ async function execUpdateNode(
     .single();
   if (error) return { ok: false, error: error.message };
   return { ok: true, node: data as GraphNode };
+}
+
+async function execRemoveEdge(
+  universeId: string,
+  input: { source_key: string; target_key: string; reason: string }
+): Promise<{ ok: true; edgeId: string } | { ok: false; error: string }> {
+  const { data, error } = await supabase
+    .from("edges")
+    .delete()
+    .eq("universe_id", universeId)
+    .eq("source_key", input.source_key)
+    .eq("target_key", input.target_key)
+    .select("id")
+    .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: `糸 ${input.source_key}→${input.target_key} は見つかりませんでした` };
+  return { ok: true, edgeId: data.id as string };
 }
 
 async function execSetPendingQuestion(
@@ -161,6 +207,18 @@ async function runToolUse(
           content: `星「${result.node.label}」(${result.node.key}) を更新しました`,
         };
       }
+      case "remove_edge": {
+        const result = await execRemoveEdge(universeId, input as never);
+        if (!result.ok) {
+          return { type: "tool_result", tool_use_id: block.id, is_error: true, content: result.error };
+        }
+        send({ type: "edge_removed", edge_id: result.edgeId });
+        return {
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: `糸 ${(input as { source_key: string }).source_key}→${(input as { target_key: string }).target_key} を切りました`,
+        };
+      }
       case "set_pending_question": {
         const question = String(input.question ?? "");
         const result = await execSetPendingQuestion(universeId, question);
@@ -192,13 +250,13 @@ function withCache<T extends { text: string; type: "text" }>(block: T): T & { ca
   return { ...block, cache_control: { type: "ephemeral" as const } };
 }
 
-export async function runInterviewTurn(universeId: string, userText: string, send: SseSend) {
+export async function runInterviewTurn(universeId: string, turnBody: string, send: SseSend) {
   const universe = await getUniverse(universeId);
   const history = await loadMessages(universeId);
 
-  const { nodes } = await getGraph(universeId);
-  const digest = buildGraphDigest(nodes, universe.pending_question);
-  const firstUserContent = `${digest}\n<user_message>${userText}</user_message>`;
+  const { nodes, edges } = await getGraph(universeId);
+  const digest = buildGraphDigest(nodes, edges, universe.pending_question);
+  const firstUserContent = `${digest}\n${turnBody}`;
 
   const messages: Anthropic.MessageParam[] = [
     ...history,

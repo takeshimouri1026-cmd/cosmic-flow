@@ -17,7 +17,7 @@ import cors from "cors";
 import express from "express";
 import { requireAppSecret } from "./auth.js";
 import { supabase } from "./db.js";
-import { nodeRouter, universeRouter } from "./routes/universe.js";
+import { edgeRouter, nodeRouter, universeRouter } from "./routes/universe.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -48,6 +48,7 @@ app.get("/api/default-universe", requireAppSecret, async (_req, res) => {
 
 app.use("/api/universe", requireAppSecret, universeRouter);
 app.use("/api/nodes", requireAppSecret, nodeRouter);
+app.use("/api/edges", requireAppSecret, edgeRouter);
 
 const clientDist = path.resolve(__dirname, "../../client/dist");
 app.use(express.static(clientDist));

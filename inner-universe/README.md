@@ -52,6 +52,25 @@ npm run seed
 
 初回実行時に universe を1件作成し、以後は再利用する（idempotent。既存キーはupsertで上書き）。`inner-cosmos/` 自体は触らずアーカイブとして残る。
 
+## 3.5 フェーズ2a（手入れモード）のDB更新
+
+既存のSupabaseプロジェクトに `nodes.user_edited` 列を追加する必要がある。SQL Editorで以下を実行（[supabase.sql](supabase.sql) 末尾に追記済みなので、まとめて再実行しても冪等）:
+
+```sql
+alter table nodes add column if not exists user_edited boolean not null default false;
+```
+
+## 3.6 フェーズ2a追補（糸の意味論）のDB更新
+
+既存のSupabaseプロジェクトに `edges.kind` 列を追加する必要がある。SQL Editorで以下を実行（[supabase.sql](supabase.sql) 末尾に追記済みなので、まとめて再実行しても冪等）:
+
+```sql
+alter table edges add column if not exists kind text not null default 'influence'
+  check (kind in ('influence','example','resonance'));
+```
+
+既存エッジは全てデフォルトの `influence` のままになる（一括再分類はしない。§2.1参照）。
+
 ## 4. ローカル開発
 
 ```bash
