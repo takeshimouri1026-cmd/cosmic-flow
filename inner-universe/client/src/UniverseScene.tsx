@@ -46,6 +46,7 @@ interface NodeVisual {
 interface EdgeVisual {
   edge: GraphEdge;
   line: THREE.Line;
+  curve: THREE.QuadraticBezierCurve3;
   particle: THREE.Sprite | null;
   baseOpacity: number;
   offset: number;
@@ -145,6 +146,19 @@ function buildEdgeCurve(a: THREE.Vector3, b: THREE.Vector3): THREE.QuadraticBezi
   mid.multiplyScalar(1 + 14 / len);
   return new THREE.QuadraticBezierCurve3(a.clone(), mid, b.clone());
 }
+
+// animate()の毎フレーム呼び出し用: 既存のcurveインスタンスをその場で書き換え、
+// 新しいVector3/Curveの割り当てを避ける（辺の本数×毎フレームのGC負荷を防ぐ）
+const _edgeMidScratch = new THREE.Vector3();
+function updateEdgeCurveInPlace(curve: THREE.QuadraticBezierCurve3, a: THREE.Vector3, b: THREE.Vector3): void {
+  _edgeMidScratch.copy(a).add(b).multiplyScalar(0.5);
+  const len = Math.max(_edgeMidScratch.length(), 1);
+  _edgeMidScratch.multiplyScalar(1 + 14 / len);
+  curve.v0.copy(a);
+  curve.v1.copy(_edgeMidScratch);
+  curve.v2.copy(b);
+}
+const _edgePointScratch = new THREE.Vector3();
 
 function makeLabel(text: string, colorCss: string): THREE.Sprite {
   const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -413,10 +427,12 @@ export default function UniverseScene({
           opacityMul = p;
           if (p >= 1) ev.birthStart = null;
         }
-        const curve = buildEdgeCurve(a.currentPos, endPos);
-        const points = curve.getPoints(EDGE_CURVE_SEGMENTS);
+        updateEdgeCurveInPlace(ev.curve, a.currentPos, endPos);
         const posAttr = ev.line.geometry.getAttribute("position") as THREE.BufferAttribute;
-        points.forEach((p, i) => posAttr.setXYZ(i, p.x, p.y, p.z));
+        for (let i = 0; i <= EDGE_CURVE_SEGMENTS; i++) {
+          ev.curve.getPoint(i / EDGE_CURVE_SEGMENTS, _edgePointScratch);
+          posAttr.setXYZ(i, _edgePointScratch.x, _edgePointScratch.y, _edgePointScratch.z);
+        }
         posAttr.needsUpdate = true;
         // status=inferred（確認待ちの提案）の糸は点滅させる。ノードの点滅と周期を揃える
         const blink = ev.edge.inferred ? 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(t * 3.4)) : 1;
@@ -424,7 +440,7 @@ export default function UniverseScene({
 
         if (ev.particle) {
           const p = (t * ev.speed + ev.offset) % 1;
-          ev.particle.position.copy(curve.getPoint(p));
+          ev.curve.getPoint(p, ev.particle.position);
           ev.particle.material.opacity = 0.8 * opacityMul * blink;
         }
       });
@@ -627,9 +643,10 @@ export default function UniverseScene({
       const color = e.inferred ? new THREE.Color("#e8e4ff") : ca.clone().lerp(cb, 0.5);
       const baseOpacity = edgeBaseOpacity(e);
 
-      // 頂点数は固定（曲線サンプル点数）で確保し、実際の座標はanimate()で毎フレーム書き換える
-      const initialPoints = buildEdgeCurve(a, b).getPoints(EDGE_CURVE_SEGMENTS);
-      const geo = new THREE.BufferGeometry().setFromPoints(initialPoints);
+      // 頂点数は固定（曲線サンプル点数）で確保し、実際の座標はanimate()で毎フレーム書き換える。
+      // curveインスタンス自体もここで1つ作って使い回す（毎フレーム新規Curveを割り当てない）
+      const curve = buildEdgeCurve(a, b);
+      const geo = new THREE.BufferGeometry().setFromPoints(curve.getPoints(EDGE_CURVE_SEGMENTS));
       const mat = new THREE.LineBasicMaterial({
         color,
         transparent: true,
@@ -663,6 +680,7 @@ export default function UniverseScene({
       edgeVisuals.current.set(id, {
         edge: e,
         line,
+        curve,
         particle,
         baseOpacity,
         offset: Math.random(),
