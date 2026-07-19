@@ -1,10 +1,11 @@
-# Inner Universe — アプリ設計書 v1.4
+# Inner Universe — アプリ設計書 v1.5
 
 *2026-07-09 Fable 5設計。実装はSonnet 5のセッションがこのドキュメントを読んで行う。*
 *v1.1: 外部情報源コネクタ（§10）と好奇心エンジン（§11）を追加、フェーズ計画を更新。*
 *v1.2: 探索モード＝一人称の洞窟探検（§13）を追加。俯瞰（三人称）と探索（一人称）の2モード構成が確定。*
 *v1.3 (2026-07-10): 手入れモード（§13）とレンズ（§13.4）を追加しフェーズ2aに設定。探索モードはフェーズ2bへ。§12内の節番号のズレ（13.x→12.x）を修正。*
 *v1.4 (2026-07-11): 糸の意味論（§2.1）を追加——「源流」の定義を明文化し、edgesに関係タイプkind（influence/example/resonance）を導入。§3.3・§12・§13.5に反映。**フェーズ2a追補**として2b着手前に実装する。*
+*v1.5 (2026-07-19): 質問の泉と対話の航跡（§14）を追加しフェーズ2cの実装仕様とした。`set_pending_question`を`queue_question`に置き換え（§11.1の先行導入）。旧§14（実装セッションへの指示）は§15へ。*
 
 ## 実装状況（2026-07-10 追記）
 
@@ -19,6 +20,7 @@
 - フェーズ2着手時は、`inner-universe/client/src/UniverseScene.tsx`（3Dビューア）・`inner-universe/server/src/interviewEngine.ts`（インタビューSSEループ）が主な拡張ポイントになる（§12探索モード・§13手入れモードはこの2ファイル＋DetailPanel.tsxに機能追加する形になる見込み）
 - フェーズ2a（§13手入れモード＋レンズ）・2a追補（§2.1糸の意味論=edges.kind）は実装・実API確認済み（2026-07-11。詳細はメモリ`project_inner_universe.md`）
 - **フェーズ2b（§12探索モード、12.1〜12.3・12.5）も実装・実API確認済み（2026-07-11）**。エッジ描画は曲線化済み（`buildEdgeCurve`、inner-cosmos/index.htmlの実装を移植）。§12.4（闇の穴・仮説ゴースト星）はフェーズ3のまま未着手。§10の`inputs`/`connectors`基盤は未着手のため、ふりかえりメモは`expeditions.path`のjsonb内に直接保存する形にした（inputsテーブルへの橋渡しは§10着手時の課題として先送り）
+- **フェーズ2c（§14: 質問の泉＋対話の航跡）は設計済み・未実装（2026-07-19、v1.5）**。実装指示例は§15にあり
 
 ## 0. コンセプト
 
@@ -310,10 +312,13 @@ const tools = [
 | **1 (MVP)** ✅実装済み | seed移行、3Dビューア、インタビューSSE＋星誕生アニメ、確定/削除UI、Render+Supabaseデプロイ | スマホのブラウザでインタビューに答えると星が生まれ、翌日も残っている（**ローカル動作確認済み。Renderへの実デプロイは未実施**） |
 | **2a** ✅実装済み | **手入れモード（§13: 星の言葉の書き換え・糸の切り張り・星を植える・AIの局所再編み）＋レンズ（§13.4）＋2a追補（§2.1糸の意味論）** | 星の言葉を直し糸を切り張りすると宇宙が応答し、提案が点滅で届く |
 | **2b** ✅実装済み | **探索モード（§12: 潜る・辿る・足あと・ふりかえりメモ・道のりを読み解く）** | ある星に潜り、糸を辿って源流まで歩き、メモが残せる |
-| **2c** | 質問キュー（§11の土台）、transcript閲覧 | 溜まった質問から選んで答えられる |
+| **2c** | **質問の泉＋対話の航跡（§14: 質問キュー=§11の土台、transcript閲覧）** | 泉に溜まった質問から選んで答えられ、これまでの語りを読み返せる |
 | **2d** | ブクログ取り込み（出典URL付き、§5）、編集会議（§4） | 本棚から星の候補が届き、月次の読み直しが読める |
+| **2.5** | **ログイン化（Supabase Auth・マルチユーザー開放・複数宇宙・オンボーディング）** | 新規ユーザーがサインアップし、ゼロから自分の宇宙を育て始められる |
 | **3** | コネクタ基盤（§10）＋easy系情報源（Googleカレンダー→Spotify/YouTube）、闇の穴＋仮説ゴースト星（§12.4） | 設定画面でON/OFFでき、探索中に「求めているドット」の仮説に出会える |
-| **4** | 好奇心エンジン本格稼働（§11）、Garmin・SNS等の難コネクタ、Supabase Auth・複数宇宙・共有リンク | |
+| **4** | 好奇心エンジン本格稼働（§11）、Garmin・SNS等の難コネクタ、共有リンク | |
+
+**フェーズ2.5について（2026-07-19決定）**: 「開発者本人が唯一のユーザー」前提をやめる改修を、フェーズ4から前倒しして2c実装完了後に行う（急ぎではない）。設計はFable 5が担当し、着手時にDESIGN.mdへ新章として書き起こす。主な設計論点: 認証方式とデータ隔離（現行はRLS無効＋APP_SHARED_SECRET＝単独利用前提の意図的簡略化）／**コスト・濫用対策**（インタビューはオーナーのAnthropicキーで課金されるため、招待制か一般公開か・回数制限をここで決める）／オンボーディングとUI再設計（2b実機確認時のユーザー所感「他ユーザーには相当難しい」が前提条件）。ゼロスタートの中核（空の宇宙でのインタビュー）は検証済み。
 
 ## 8. コストとセキュリティ
 
@@ -405,6 +410,8 @@ create table questions (
 ```
 
 既存の `set_pending_question` ツールをこのテーブルに置き換え、インタビュアーには `queue_question`（複数登録可・ただし一度に**提示**するのは1つ）を持たせる。ユーザーは質問リストを眺めて「これに答えたい」を選べる。**質問は宝物なので捨てずに貯める**。
+
+→ **フェーズ2cの実装仕様は§14（質問の泉と対話の航跡）**。この節の`questions`テーブル定義がそのまま正。
 
 ### 11.2 観測バッチ（フェーズ3〜4）
 
@@ -559,7 +566,80 @@ create table expeditions (
 
 **移行**: 既存エッジは全てデフォルトの `influence` のまま。一括再分類はしない（§2.1の原則）。
 
-## 14. 実装セッションへの指示（このドキュメントの使い方）
+## 14. 質問の泉と対話の航跡 — 質問キューとtranscript閲覧（フェーズ2c）
+
+*v1.5追加。§11.1（質問キュー）の先行導入と、messagesログの閲覧UI。好奇心エンジン（§11.2観測バッチ）はフェーズ4のままだが、質問が貯まり・選ばれ・答えられる「泉」の器をここで作る。*
+
+インタビューの締めの質問はこれまで「1つだけ保存して次回に出す」使い捨てだった（`universes.pending_question`）。これを**泉**に変える: AIが聞きたいことは複数貯まり、ユーザーは提示された質問に答えてもいいし、泉から別の質問を選んで答えてもいい。**質問は宝物なので捨てずに貯める**（§11.1）。あわせて、これまでの語り全体を読み返せる**航跡**（transcript閲覧）を作る。
+
+### 14.1 原則
+
+1. **質問は宝物**: 削除しない。いらない質問は `dismissed`（暗くする）にするだけで、泉の底に残り復活できる。「消す」より「暗くする」（§13.2の考古学と同じ思想）
+2. **提示は一つずつ、泉は複数**: システムプロンプト原則1（質問は必ず一つずつ）は変えない。変わるのは裏側だけ——締めに使わなかった「いつか聞きたいこと」も泉に貯められるようになる
+3. **選ぶ主権はユーザー**: AIは次の質問を提示するが、どの質問に答えるかは本人が決める。泉から選ばれた質問には、AIはその文脈を汲んで応対する（言葉の主権・手の主権に続く、**問いを選ぶ主権**）
+4. **航跡は読み物**: 生ログ（グラフダイジェスト・tool_useのJSON・tool_result）は見せない。本人の語り・AIの応答・宇宙に起きたこと（星の誕生・糸・手入れ）だけを蒸留して時系列で読ませる。3D演出は足さない
+
+### 14.2 DBと移行
+
+- §11.1の `create table questions` を **そのまま** `supabase.sql` に追記（変更しない。`evidence` には `{"node_keys": [...]}` を入れる）。READMEに実行手順を記載（`user_edited`・`kind` 追加時と同じ手順、実行はユーザーがSupabase SQL Editorで行う）
+- **移行SQLを添える**: 既存の `universes.pending_question` が非NULLなら、その内容を `questions` に `status='asked'` で1行insertする（`insert ... select ... where pending_question is not null`）。以後 `pending_question` カラムは**読みも書きもしない**（カラム自体は残す。削除はフェーズ3のスキーマ整理で検討）
+
+### 14.3 サーバ
+
+**ツール置き換え**: `set_pending_question` を削除し、`queue_question` を追加:
+
+```jsonc
+{
+  "name": "queue_question",
+  "description": "聞きたい質問を泉（質問キュー）に登録する。present=trueは今回の応答の締めに提示する質問（応答本文の最後にも同じ質問を書くこと。1ターンに1つだけ）。present=falseは今は聞かないが将来聞きたい質問を貯める。",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "question": { "type": "string" },
+      "rationale": { "type": "string", "description": "なぜ聞きたいか。UIで「AIがこれを聞きたい理由」として本人に見える" },
+      "related_keys": { "type": "array", "items": { "type": "string" }, "description": "根拠となる星のkey。無ければ空配列" },
+      "present": { "type": "boolean" }
+    },
+    "required": ["question", "rationale", "related_keys", "present"],
+    "additionalProperties": false
+  }
+}
+```
+
+（strict: true。単純型のみでunion+enum併記の罠には当たらない）
+
+- **present=trueの実行**: 既存の `status='asked'` 行をすべて `'open'` に戻してから、新しい行を `'asked'` でinsertする。「提示は常に1つ」をサーバが保証し、答えられなかった質問は自動的に泉へ還る（後勝ち。1ターンに複数present=trueが来ても壊れない）
+- **present=falseの実行**: `status='open'` でinsertするだけ
+- **グラフダイジェスト**（`buildGraphDigest`）: `pending_question:` 行を置き換え、`asked: <提示中の質問>` と `--- 泉（open questions, 新しい順・最大10件） ---` の一覧を含める。AIはこれを見て**重複質問を登録しない**・泉の中の質問を会話の流れで自然に持ち出せる
+- **インタビューターン拡張**: `POST /api/universe/:id/interview` のbodyに任意の `question_id` を追加。あればサーバはその質問を読み、`<answering_question>質問文</answering_question>` ブロックをturnBodyの前に付けてAIに文脈を渡し、**ターンが正常完了したら**その行を `status='answered'` に更新する（失敗時は据え置き）
+- **REST**:
+  - `GET /api/universe/:id/questions` → `status in ('open','asked')` を新しい順で返す。`?all=1` で answered/dismissed も返す（泉の底）
+  - `PATCH /api/questions/:id` → `status` の変更のみ（`dismissed` にする / `open` に復活）。LLMには流さない直接更新（StarListの⇄と同じ扱い）
+- **systemPrompt更新**: 原則7を書き換え——「応答の最後は必ず次の質問で締める。queue_question(present=true)で同じ質問を保存すること」。追記——「会話の中で『今は聞かないが、いつか聞きたい』が湧いたらpresent=falseで泉に貯めてよい（1ターン最大2つまで。乱発しない）。ダイジェストの泉一覧にある質問と重複するものは登録しない。`<answering_question>`ブロックが付いたターンは、本人が泉からその質問を選んで答えに来たということ。その質問の文脈（rationale相当の意図）を汲んで受け止めること」。手入れモード方針6の `set_pending_question` 言及も `queue_question(present=true)` に読み替えて更新（手入れ応答では無理に使わない、は従来どおり）
+- **transcript API**: `GET /api/universe/:id/transcript?before=<created_at>&limit=100` → messagesを新しい順にページング返却。**蒸留はサーバでやる**（生contentをクライアントに送らない。表示ロジックの一元化と、フェーズ3マルチユーザー時の情報最小化のため）。各messageを表示アイテム配列に変換:
+  - user・string content: `<graph_digest>...</graph_digest>` を除去。`<user_action>...</user_action>` → `{type:"action", summary}`（操作の種類と対象を1行に）。`<answering_question>...</answering_question>` → `{type:"picked_question", question}`。残りの本文 → `{type:"user_text", text}`
+  - user・array content（tool_result）: **スキップ**（アイテムなし）
+  - assistant: textブロック → `{type:"ai_text", text}`。tool_use → チップ: `add_node`→`{type:"star_born", label}`、`add_edge`→`{type:"thread_tied", source_key, target_key}`、`update_node`→`{type:"star_updated", key}`、`remove_edge`→`{type:"thread_cut"}`、`queue_question`→`{type:"question_queued", present}`
+  - 各アイテムに `created_at` を付与（日付見出し用）。空になったmessage（tool_resultのみ等）は返さない
+
+### 14.4 クライアント
+
+- **SSEイベント変更**: `{type:"pending_question"}` → `{type:"question_queued", question, present}`。present=trueなら提示中質問（activeQuestion）を差し替え、present=falseなら泉バッジを+1して控えめに知らせる（「泉に問いがひとつ落ちた」程度の軽い表示。派手な演出は足さない）
+- **`QuestionSpring.tsx`（泉シート）**: ヘッダーに「泉」ボタン＋open件数バッジ（StarList/ClusterManagerと同じ様式のDOMシート）。各行: 質問文／「AIがこれを聞きたい理由」（rationale、折りたたみ）／related_keysの星チップ。行の操作:
+  - **「これに答えたい」** → シートを閉じ、InterviewPanelを開き、その質問をassistant行として表示。次の送信に `question_id` を添付
+  - **「暗くする」**（dismissed）→ 一覧から消え、シート下部の「泉の底」（折りたたみ）へ。そこから「泉に戻す」で復活（PATCHのみ、AIには流れない）
+- **InterviewPanel**: `pendingQuestion` プロップを `activeQuestion`（提示中 'asked' の質問、または泉から選んだ質問）に置き換え。空状態の文言はactiveQuestionがあればそれを出す（現行と同じ挙動の一般化）
+- **`TranscriptView.tsx`（航跡）**: ヘッダーに「航跡」ボタン → 全画面シート。新しい順に表示し、上へスクロールで過去を追加読み込み（`before` パラメータ）。日付見出し、user/AIの吹き出し、チップ（⭐星が生まれた「label」／🧵糸／✂糸を切った／🛠手入れ／💧泉から選んだ問い）。検索・フィルタはフェーズ3送り（現状は唯一のユーザー＝開発者本人が読み返せれば十分）
+
+### 14.5 検収基準（実API・使い捨てテスト宇宙で確認し、終わったら消す）
+
+1. インタビュー1ターン完走 → 締めの質問が `questions` に `status='asked'` で入り、次ターンのダイジェストに `asked:` として載る。前の 'asked' は 'open' に還っている
+2. AIが present=false で貯めた質問が泉シートに理由付きで表示され、バッジ件数が合う
+3. 泉から質問を選んで答える → ターン完了後に `status='answered'` になり、AIの応答が `<answering_question>` の文脈を踏まえている
+4. 移行SQLで既存 `universes.pending_question` が 'asked' 行として泉に入る
+5. 航跡にグラフダイジェスト・tool_useの生JSONが**見えない**こと。星の誕生チップ・手入れチップが正しい位置に出ること。`before` ページングで過去に遡れること
+
+## 15. 実装セッションへの指示（このドキュメントの使い方）
 
 新しいClaude Codeチャット（Sonnet 5）で:
 
@@ -572,6 +652,10 @@ create table expeditions (
 フェーズ2a追補（糸の意味論）の指示例:
 
 > inner-universe/DESIGN.md の冒頭「実装状況」と §2.1（糸の意味論）・§13.5（フェーズ2a追補）を読んで、糸の関係タイプ kind（influence/example/resonance）を実装して。§3.3の add_edge ツール定義は更新済みなのでコードを同期すること。DB変更（edges.kind）は supabase.sql にALTER文を追記し、READMEに実行手順を書くこと（実行はユーザーがSupabase SQL Editorで行う）。動作確認は実API（Anthropic/Supabase）で、使い捨てのテスト宇宙を作って (1)TiePickerで「あらわれ」を選んで糸を張る→AIの応答がチャットに届く、(2)influenceの糸を1本exampleに変える→張り元の星の輪（源流表示）が消える、の両方を通すこと（終わったらテスト宇宙は消す）。既存エッジの一括再分類はしないこと（§2.1）。
+
+フェーズ2c（質問の泉＋対話の航跡）の指示例:
+
+> inner-universe/DESIGN.md の冒頭「実装状況」と §11.1（質問キュー）・§14（質問の泉と対話の航跡）を読んで、フェーズ2cを実装して。DB変更（questionsテーブル新設＋pending_question移行SQL）は supabase.sql に追記し、READMEに実行手順を書くこと（実行はユーザーがSupabase SQL Editorで行う）。set_pending_question ツールは削除し queue_question に置き換えること（§14.3の定義どおり。strict、union型にenumを併記しない）。transcriptの蒸留はサーバ側で行い、生content（グラフダイジェスト・tool_use JSON・tool_result）をクライアントに送らないこと。動作確認は実API（Anthropic/Supabase）で使い捨てのテスト宇宙を作り、§14.5の検収基準5点をすべて通すこと（終わったらテスト宇宙は消す）。このPCでのブラウザ確認は本番ビルド（npm run build && npm start）で行った方が安定する（Vite dev serverのHMR切断問題）。
 
 実装上の注意（Claude API周り、2026-07時点の正確な仕様）:
 - モデルID: `claude-sonnet-5` / `claude-opus-4-8`（日付サフィックスを付けない）
