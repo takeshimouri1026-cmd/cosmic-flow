@@ -2,9 +2,10 @@ import { Router } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
 import { anthropic } from "../anthropicClient.js";
 import { supabase } from "../db.js";
-import { buildPathText, findEdgeByPair, getGraph, getUniverse } from "../graph.js";
+import { buildPathText, findEdgeByPair, getGraph, getQuestions, getUniverse } from "../graph.js";
 import { runInterviewTurn } from "../interviewEngine.js";
 import { NARRATION_SYSTEM_PROMPT } from "../narrationPrompt.js";
+import { distillMessage } from "../transcript.js";
 import type { ExpeditionStep } from "../types.js";
 
 const EDGE_KINDS = ["influence", "example", "resonance"] as const;
@@ -132,6 +133,8 @@ universeRouter.post("/:id/interview", async (req, res) => {
     turnBody = `<user_message>${text}</user_message>`;
   }
 
+  const questionId = typeof req.body?.question_id === "string" ? req.body.question_id : null;
+
   if (interviewLocks.has(universeId)) {
     res.status(429).json({ error: "前の発話がまだ処理中です" });
     return;
@@ -148,12 +151,45 @@ universeRouter.post("/:id/interview", async (req, res) => {
 
   interviewLocks.add(universeId);
   try {
-    await runInterviewTurn(universeId, turnBody, send);
+    await runInterviewTurn(universeId, turnBody, send, questionId);
   } catch (err) {
     send({ type: "error", message: err instanceof Error ? err.message : String(err) });
   } finally {
     interviewLocks.delete(universeId);
     res.end();
+  }
+});
+
+// 質問の泉（§14.3）: open/asked を新しい順で返す。?all=1 で answered/dismissed も返す（泉の底）
+universeRouter.get("/:id/questions", async (req, res) => {
+  try {
+    const questions = await getQuestions(req.params.id, { all: req.query.all === "1" });
+    res.json({ questions });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// 対話の航跡（§14.3）: messagesを蒸留して新しい順にページング返却。生contentはクライアントに出さない
+universeRouter.get("/:id/transcript", async (req, res) => {
+  const before = typeof req.query.before === "string" ? req.query.before : undefined;
+  const limit = Math.min(Number(req.query.limit ?? 100) || 100, 200);
+  try {
+    let query = supabase
+      .from("messages")
+      .select("role, content, created_at")
+      .eq("universe_id", req.params.id)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (before) query = query.lt("created_at", before);
+    const { data, error } = await query;
+    if (error) throw error;
+    const items = (data ?? []).flatMap((m) =>
+      distillMessage(m as { role: string; content: unknown; created_at: string })
+    );
+    res.json({ items });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -390,4 +426,26 @@ edgeRouter.patch("/:id", async (req, res) => {
     return;
   }
   res.json({ edge: data });
+});
+
+export const questionRouter = Router();
+
+// 質問の泉（§14.1・§14.3）: statusの変更のみ。「消す」より「暗くする」。LLMには流さない直接更新
+questionRouter.patch("/:id", async (req, res) => {
+  const status = req.body?.status;
+  if (status !== "open" && status !== "dismissed") {
+    res.status(400).json({ error: "status は 'open' か 'dismissed' です" });
+    return;
+  }
+  const { data, error } = await supabase
+    .from("questions")
+    .update({ status })
+    .eq("id", req.params.id)
+    .select()
+    .single();
+  if (error) {
+    res.status(500).json({ error: error.message });
+    return;
+  }
+  res.json({ question: data });
 });

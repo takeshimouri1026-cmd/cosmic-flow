@@ -84,18 +84,28 @@ export const INTERVIEW_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
-    name: "set_pending_question",
-    description: "次のインタビュー質問を1つだけ保存する（質問は必ず一つずつ）。応答本文の最後にも同じ質問を書くこと。",
+    name: "queue_question",
+    description:
+      "聞きたい質問を泉（質問キュー）に登録する。present=trueは今回の応答の締めに提示する質問（応答本文の最後にも同じ質問を書くこと。1ターンに1つだけ）。present=falseは今は聞かないが将来聞きたい質問を貯める。",
     input_schema: {
       type: "object",
-      properties: { question: { type: "string" } },
-      required: ["question"],
+      properties: {
+        question: { type: "string" },
+        rationale: { type: "string", description: "なぜ聞きたいか。UIで「AIがこれを聞きたい理由」として本人に見える" },
+        related_keys: { type: "array", items: { type: "string" }, description: "根拠となる星のkey。無ければ空配列" },
+        present: { type: "boolean" },
+      },
+      required: ["question", "rationale", "related_keys", "present"],
       additionalProperties: false,
     },
   },
 ];
 
-// strict: true をトップレベルに付与（型定義に含まれないため as で拡張）
+// strict: true をトップレベルに付与（型定義に含まれないため as で拡張）。
+// 注意: queue_question は array型プロパティ(related_keys)を持つため、他4ツールとまとめて
+// strict:true にすると実APIが「Schema is too complex for compilation」で400を返す
+// （実測で確認済み。DESIGN.md未記載の追加の罠）。queue_questionのみstrictを外し、
+// その分の入力検証はサーバ側(execQueueQuestion)で行う
 for (const tool of INTERVIEW_TOOLS) {
-  (tool as unknown as { strict: boolean }).strict = true;
+  (tool as unknown as { strict: boolean }).strict = tool.name !== "queue_question";
 }

@@ -85,6 +85,33 @@ create table if not exists expeditions (
 );
 ```
 
+## 3.8 フェーズ2c（質問の泉・対話の航跡）のDB更新
+
+新規テーブルと移行SQL。SQL Editorで以下を実行（[supabase.sql](supabase.sql) 末尾に追記済み。まとめて再実行しても冪等）:
+
+```sql
+create table if not exists questions (
+  id uuid primary key default gen_random_uuid(),
+  universe_id uuid references universes(id) on delete cascade,
+  question text not null,
+  rationale text,
+  evidence jsonb,
+  status text not null default 'open' check (status in ('open','asked','answered','dismissed')),
+  priority int default 5,
+  created_at timestamptz default now()
+);
+
+insert into questions (universe_id, question, status)
+select id, pending_question, 'asked'
+from universes
+where pending_question is not null
+  and not exists (
+    select 1 from questions q where q.universe_id = universes.id and q.question = universes.pending_question
+  );
+```
+
+移行後、既存の `universes.pending_question` は読みも書きもしなくなる（カラム自体は残る）。
+
 ## 4. ローカル開発
 
 ```bash

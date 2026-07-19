@@ -1,4 +1,15 @@
-import type { Cluster, EdgeKind, Expedition, ExpeditionStep, GraphState, InterviewEvent, Universe } from "./types";
+import type {
+  Cluster,
+  EdgeKind,
+  Expedition,
+  ExpeditionStep,
+  GraphState,
+  InterviewEvent,
+  Question,
+  QuestionStatus,
+  TranscriptItem,
+  Universe,
+} from "./types";
 
 const APP_SECRET = import.meta.env.VITE_APP_SHARED_SECRET as string | undefined;
 
@@ -148,15 +159,44 @@ export async function streamInterview(
   universeId: string,
   text: string,
   onEvent: (event: InterviewEvent) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  questionId?: string | null
 ): Promise<void> {
   const res = await fetch(`/api/universe/${universeId}/interview`, {
     method: "POST",
     headers: headers({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, question_id: questionId ?? undefined }),
     signal,
   });
   await consumeSse(res, onEvent);
+}
+
+// 質問の泉（§14.4）
+export async function fetchQuestions(universeId: string, all = false): Promise<{ questions: Question[] }> {
+  const res = await fetch(`/api/universe/${universeId}/questions${all ? "?all=1" : ""}`, { headers: headers() });
+  return asJson(res);
+}
+
+export async function patchQuestion(questionId: string, status: QuestionStatus): Promise<{ question: Question }> {
+  const res = await fetch(`/api/questions/${questionId}`, {
+    method: "PATCH",
+    headers: headers({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ status }),
+  });
+  return asJson(res);
+}
+
+// 対話の航跡（§14.4）
+export async function fetchTranscript(
+  universeId: string,
+  opts?: { before?: string; limit?: number }
+): Promise<{ items: TranscriptItem[] }> {
+  const params = new URLSearchParams();
+  if (opts?.before) params.set("before", opts.before);
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  const res = await fetch(`/api/universe/${universeId}/transcript${qs ? `?${qs}` : ""}`, { headers: headers() });
+  return asJson(res);
 }
 
 async function consumeSse(res: Response, onEvent: (event: InterviewEvent) => void): Promise<void> {

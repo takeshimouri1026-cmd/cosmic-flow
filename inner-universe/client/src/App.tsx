@@ -7,6 +7,8 @@ import InterviewPanel from "./InterviewPanel";
 import TiePicker from "./TiePicker";
 import StarList from "./StarList";
 import ClusterManager from "./ClusterManager";
+import QuestionSpring from "./QuestionSpring";
+import TranscriptView from "./TranscriptView";
 import { connectionsOf } from "./connections";
 import {
   confirmNode,
@@ -15,6 +17,7 @@ import {
   deleteEdge,
   fetchDefaultUniverse,
   fetchGraph,
+  fetchQuestions,
   narratePath,
   patchEdge,
   patchNode,
@@ -25,7 +28,7 @@ import {
   streamInterview,
 } from "./api";
 import type { UserAction } from "./api";
-import type { EdgeKind, ExpeditionStep, GraphEdge, GraphNode, GraphState, InterviewEvent } from "./types";
+import type { EdgeKind, ExpeditionStep, GraphEdge, GraphNode, GraphState, InterviewEvent, Question } from "./types";
 
 interface ChatLine {
   role: "user" | "assistant";
@@ -48,6 +51,12 @@ export default function App() {
   const [cutUndo, setCutUndo] = useState<GraphEdge | null>(null);
   const [starListOpen, setStarListOpen] = useState(false);
   const [clusterManagerOpen, setClusterManagerOpen] = useState(false);
+  const [springOpen, setSpringOpen] = useState(false);
+  const [springOpenCount, setSpringOpenCount] = useState(0);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [askedQuestion, setAskedQuestion] = useState<string | null>(null);
+  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
+  const [interviewOpenNonce, setInterviewOpenNonce] = useState(0);
   const [focusRequest, setFocusRequest] = useState<{ key: string; nonce: number } | null>(null);
   const [chamberKey, setChamberKey] = useState<string | null>(null);
   const [expeditionPath, setExpeditionPath] = useState<ExpeditionStep[]>([]);
@@ -78,6 +87,9 @@ export default function App() {
       const universe = await fetchDefaultUniverse();
       const g = await fetchGraph(universe.id);
       setGraph(g);
+      const { questions } = await fetchQuestions(universe.id);
+      setAskedQuestion(questions.find((q) => q.status === "asked")?.question ?? null);
+      setSpringOpenCount(questions.filter((q) => q.status === "open").length);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -121,8 +133,12 @@ export default function App() {
       setGraph((g) => (g ? { ...g, edges: g.edges.filter((e) => e.id !== event.edge_id) } : g));
       return;
     }
-    if (event.type === "pending_question") {
-      setGraph((g) => (g ? { ...g, universe: { ...g.universe, pending_question: event.question } } : g));
+    if (event.type === "question_queued") {
+      if (event.present) {
+        setAskedQuestion(event.question);
+      } else {
+        setSpringOpenCount((c) => c + 1);
+      }
       return;
     }
     if (event.type === "error") {
@@ -145,11 +161,13 @@ export default function App() {
   const handleSend = useCallback(
     async (text: string) => {
       if (!graph) return;
+      const questionId = selectedQuestionId;
+      setSelectedQuestionId(null);
       setChatLines((prev) => [...prev, { role: "user", text }]);
       setStreaming(true);
       streamingTextRef.current = "";
       try {
-        await streamInterview(graph.universe.id, text, applyEvent);
+        await streamInterview(graph.universe.id, text, applyEvent, undefined, questionId);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setChatLines((prev) => [
@@ -162,8 +180,16 @@ export default function App() {
         streamingTextRef.current = "";
       }
     },
-    [graph, applyEvent]
+    [graph, applyEvent, selectedQuestionId]
   );
+
+  // 質問の泉（§14.4）: 「これに答えたい」。選んだ質問をassistant行として表示し、次の送信にquestion_idを添付する
+  const handlePickQuestion = useCallback((q: Question) => {
+    setChatLines((prev) => [...prev, { role: "assistant", text: q.question }]);
+    setSelectedQuestionId(q.id);
+    setSpringOpen(false);
+    setInterviewOpenNonce(Date.now());
+  }, []);
 
   // 手入れモード（§13）: 操作は即時にDBへ反映済み。ここでは同じ操作を<user_action>として
   // インタビューエンジンに流し、宇宙（AI）の応答（近傍だけ読んだ短い提案）をチャットに届ける
@@ -558,6 +584,12 @@ export default function App() {
             <button className="lens" onClick={() => setClusterManagerOpen(true)}>
               ✎ クラスタ
             </button>
+            <button className="lens" onClick={() => setSpringOpen(true)}>
+              💧 泉{springOpenCount > 0 ? `（${springOpenCount}）` : ""}
+            </button>
+            <button className="lens" onClick={() => setTranscriptOpen(true)}>
+              📜 航跡
+            </button>
           </div>
         </div>
       )}
@@ -587,6 +619,25 @@ export default function App() {
           onCreate={handleCreateCluster}
           busy={busy}
         />
+      )}
+
+      {!chamberKey && springOpen && (
+        <QuestionSpring
+          universeId={graph.universe.id}
+          nodeByKey={nodeByKey}
+          onClose={() => setSpringOpen(false)}
+          onSelectNode={(key) => {
+            setSelectedKey(key);
+            setFocusRequest({ key, nonce: Date.now() });
+            setSpringOpen(false);
+          }}
+          onPick={handlePickQuestion}
+          busy={busy}
+        />
+      )}
+
+      {!chamberKey && transcriptOpen && (
+        <TranscriptView universeId={graph.universe.id} onClose={() => setTranscriptOpen(false)} />
       )}
 
       {!chamberKey && selectedNode && (
@@ -653,12 +704,13 @@ export default function App() {
       )}
 
       <InterviewPanel
-        pendingQuestion={graph.universe.pending_question}
+        activeQuestion={askedQuestion}
         onSend={handleSend}
         lines={chatLines}
         streaming={streaming}
         prefill={prefill}
         onPrefillConsumed={() => setPrefill("")}
+        forceOpenNonce={interviewOpenNonce}
       />
     </>
   );

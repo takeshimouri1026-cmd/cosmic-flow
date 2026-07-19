@@ -1,11 +1,11 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { anthropic } from "./anthropicClient.js";
 import { supabase } from "./db.js";
-import { buildGraphDigest, findEdgeByPair, getGraph, getUniverse } from "./graph.js";
+import { buildGraphDigest, findEdgeByPair, getGraph, getQuestions, getUniverse } from "./graph.js";
 import { loadMessages, saveMessage } from "./messages.js";
 import { INTERVIEW_TOOLS } from "./tools.js";
 import { INTERVIEWER_SYSTEM_PROMPT } from "./systemPrompt.js";
-import type { GraphEdge, GraphNode } from "./types.js";
+import type { GraphEdge, GraphNode, Question } from "./types.js";
 
 export type SseSend = (event: Record<string, unknown>) => void;
 
@@ -151,16 +151,43 @@ async function execRemoveEdge(
   return { ok: true, edgeId: data.id as string };
 }
 
-async function execSetPendingQuestion(
+// 質問の泉（§14.3）: present=trueは既存のaskedをopenに還してから新規をaskedでinsert
+// （「提示は常に1つ」をサーバが保証。答えなかった質問は自動的に泉へ戻る）。present=falseは貯めるだけ
+async function execQueueQuestion(
   universeId: string,
-  question: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { error } = await supabase
-    .from("universes")
-    .update({ pending_question: question })
-    .eq("id", universeId);
+  input: { question: string; rationale: string; related_keys: string[]; present: boolean }
+): Promise<{ ok: true; question: Question } | { ok: false; error: string }> {
+  // strict:falseのツールのためサーバ側で形を検証する（tools.ts参照: 実APIのschema複雑度上限の回避）
+  if (typeof input.question !== "string" || !input.question.trim()) {
+    return { ok: false, error: "question は空でない文字列が必要です" };
+  }
+  if (typeof input.present !== "boolean") {
+    return { ok: false, error: "present は true/false のいずれかが必要です" };
+  }
+  if (input.related_keys !== undefined && !Array.isArray(input.related_keys)) {
+    return { ok: false, error: "related_keys は文字列の配列が必要です" };
+  }
+  if (input.present) {
+    const { error: revertErr } = await supabase
+      .from("questions")
+      .update({ status: "open" })
+      .eq("universe_id", universeId)
+      .eq("status", "asked");
+    if (revertErr) return { ok: false, error: revertErr.message };
+  }
+  const { data, error } = await supabase
+    .from("questions")
+    .insert({
+      universe_id: universeId,
+      question: input.question,
+      rationale: input.rationale || null,
+      evidence: { node_keys: input.related_keys ?? [] },
+      status: input.present ? "asked" : "open",
+    })
+    .select()
+    .single();
   if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  return { ok: true, question: data as Question };
 }
 
 async function runToolUse(
@@ -219,14 +246,18 @@ async function runToolUse(
           content: `糸 ${(input as { source_key: string }).source_key}→${(input as { target_key: string }).target_key} を切りました`,
         };
       }
-      case "set_pending_question": {
-        const question = String(input.question ?? "");
-        const result = await execSetPendingQuestion(universeId, question);
+      case "queue_question": {
+        const result = await execQueueQuestion(universeId, input as never);
         if (!result.ok) {
           return { type: "tool_result", tool_use_id: block.id, is_error: true, content: result.error };
         }
-        send({ type: "pending_question", question });
-        return { type: "tool_result", tool_use_id: block.id, content: "次の質問を保存しました" };
+        const present = result.question.status === "asked";
+        send({ type: "question_queued", question: result.question.question, present });
+        return {
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: present ? "この質問を締めの質問として保存しました" : "質問を泉に貯めました",
+        };
       }
       default:
         return {
@@ -250,13 +281,33 @@ function withCache<T extends { text: string; type: "text" }>(block: T): T & { ca
   return { ...block, cache_control: { type: "ephemeral" as const } };
 }
 
-export async function runInterviewTurn(universeId: string, turnBody: string, send: SseSend) {
-  const universe = await getUniverse(universeId);
+export async function runInterviewTurn(
+  universeId: string,
+  turnBody: string,
+  send: SseSend,
+  questionId?: string | null
+) {
+  await getUniverse(universeId);
   const history = await loadMessages(universeId);
 
   const { nodes, edges } = await getGraph(universeId);
-  const digest = buildGraphDigest(nodes, edges, universe.pending_question);
-  const firstUserContent = `${digest}\n${turnBody}`;
+  const springQuestions = await getQuestions(universeId);
+  const askedQuestion = springQuestions.find((q) => q.status === "asked")?.question ?? null;
+  const openQuestions = springQuestions.filter((q) => q.status === "open");
+  const digest = buildGraphDigest(nodes, edges, askedQuestion, openQuestions);
+
+  // 泉から質問を選んで答えに来た場合、その文脈をAIに渡す（§14.3）
+  let answeringQuestion: Question | null = null;
+  if (questionId) {
+    const { data, error } = await supabase.from("questions").select("*").eq("id", questionId).maybeSingle();
+    if (error) throw error;
+    answeringQuestion = data as Question | null;
+  }
+  const answeringBlock = answeringQuestion
+    ? `<answering_question>${answeringQuestion.question}</answering_question>\n`
+    : "";
+
+  const firstUserContent = `${digest}\n${answeringBlock}${turnBody}`;
 
   const messages: Anthropic.MessageParam[] = [
     ...history,
@@ -300,6 +351,9 @@ export async function runInterviewTurn(universeId: string, turnBody: string, sen
     turnUserBlocks = [...turnUserBlocks, { role: "assistant", content: finalMessage.content }];
 
     if (finalMessage.stop_reason !== "tool_use") {
+      if (answeringQuestion) {
+        await supabase.from("questions").update({ status: "answered" }).eq("id", answeringQuestion.id);
+      }
       send({ type: "done" });
       return;
     }

@@ -60,3 +60,28 @@ export interface Expedition {
   narration: string | null;
   created_at: string;
 }
+
+export type QuestionStatus = "open" | "asked" | "answered" | "dismissed";
+
+export interface Question {
+  id: string;
+  universe_id: string;
+  question: string;
+  rationale: string | null;
+  evidence: { node_keys?: string[] } | null;
+  status: QuestionStatus;
+  priority: number | null;
+  created_at: string;
+}
+
+// 対話の航跡（§14.3）: messagesを蒸留した表示アイテム
+export type TranscriptItem =
+  | { type: "user_text"; text: string; created_at: string }
+  | { type: "action"; summary: string; created_at: string }
+  | { type: "picked_question"; question: string; created_at: string }
+  | { type: "ai_text"; text: string; created_at: string }
+  | { type: "star_born"; label: string; created_at: string }
+  | { type: "thread_tied"; source_key: string; target_key: string; created_at: string }
+  | { type: "star_updated"; key: string; created_at: string }
+  | { type: "thread_cut"; created_at: string }
+  | { type: "question_queued"; present: boolean; created_at: string };

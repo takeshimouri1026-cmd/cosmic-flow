@@ -1,5 +1,5 @@
 import { supabase } from "./db.js";
-import type { Cluster, ExpeditionStep, GraphEdge, GraphNode, Universe } from "./types.js";
+import type { Cluster, ExpeditionStep, GraphEdge, GraphNode, Question, Universe } from "./types.js";
 
 export async function getUniverse(universeId: string): Promise<Universe> {
   const { data, error } = await supabase
@@ -28,10 +28,25 @@ export async function getGraph(universeId: string) {
   };
 }
 
+// 質問の泉（§14）: 現在提示中('asked')の1件と、泉に貯まっている('open')一覧を取得する
+export async function getQuestions(
+  universeId: string,
+  opts?: { all?: boolean }
+): Promise<Question[]> {
+  let query = supabase.from("questions").select("*").eq("universe_id", universeId);
+  query = opts?.all
+    ? query.in("status", ["open", "asked", "answered", "dismissed"])
+    : query.in("status", ["open", "asked"]);
+  const { data, error } = await query.order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as Question[];
+}
+
 export function buildGraphDigest(
   nodes: GraphNode[],
   edges: GraphEdge[],
-  pendingQuestion: string | null
+  askedQuestion: string | null,
+  openQuestions: Question[]
 ): string {
   const lines = nodes.map(
     (n) => `${n.key}\t${n.label}\t${n.type}\t${n.cluster}\tsize=${n.size}\t${n.status}`
@@ -41,8 +56,10 @@ export function buildGraphDigest(
     (e) => `${e.source_key}->${e.target_key}\t${e.kind}\tstrength=${e.strength}\t${e.description}`
   );
   const edgeBody = edgeLines.length ? edgeLines.join("\n") : "(まだ糸がありません)";
-  const pending = pendingQuestion ? `\npending_question: ${pendingQuestion}` : "";
-  return `<graph_digest>\n${body}\n--- edges (source->target, kind) ---\n${edgeBody}${pending}\n</graph_digest>`;
+  const asked = askedQuestion ? `\nasked: ${askedQuestion}` : "";
+  const springLines = openQuestions.slice(0, 10).map((q) => `- ${q.question}`);
+  const springBody = springLines.length ? springLines.join("\n") : "(まだ泉に質問はありません)";
+  return `<graph_digest>\n${body}\n--- edges (source->target, kind) ---\n${edgeBody}${asked}\n--- 泉（open questions, 新しい順・最大10件） ---\n${springBody}\n</graph_digest>`;
 }
 
 // 探索モード（§12.5）: 辿った経路を、ナレーション生成のためのテキストに組み立てる

@@ -6,26 +6,34 @@ interface ChatLine {
 }
 
 interface Props {
-  pendingQuestion: string | null;
+  activeQuestion: string | null;
   onSend: (text: string) => Promise<void>;
   lines: ChatLine[];
   streaming: boolean;
   prefill: string;
   onPrefillConsumed: () => void;
+  forceOpenNonce?: number;
 }
 
 export default function InterviewPanel({
-  pendingQuestion,
+  activeQuestion,
   onSend,
   lines,
   streaming,
   prefill,
   onPrefillConsumed,
+  forceOpenNonce,
 }: Props) {
   const [text, setText] = useState("");
   const [collapsed, setCollapsed] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // 泉から質問を選んだ時（§14.4）、たたまれていたら開く
+  useEffect(() => {
+    if (forceOpenNonce) setCollapsed(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forceOpenNonce]);
 
   useEffect(() => {
     if (prefill) {
@@ -67,7 +75,7 @@ export default function InterviewPanel({
           <div className="interview-log">
             {lines.length === 0 && (
               <div className="chat-line assistant">
-                {pendingQuestion ??
+                {activeQuestion ??
                   "この宇宙は、これまでの対話から生まれた星々で始まっています。いま心にあること、最近熱を持っていることを、自由に話してください。"}
               </div>
             )}

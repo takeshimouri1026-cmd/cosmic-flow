@@ -85,3 +85,26 @@ create table if not exists expeditions (
   narration text,             -- 「道のりを読み解く」で生成した内省ナレーション
   created_at timestamptz default now()
 );
+
+-- フェーズ2c: 質問の泉（§11.1・§14）
+-- AIが聞きたいことを複数貯める「泉」。質問は宝物なので削除せず、dismissedで暗くするだけ
+create table if not exists questions (
+  id uuid primary key default gen_random_uuid(),
+  universe_id uuid references universes(id) on delete cascade,
+  question text not null,
+  rationale text,                -- なぜ聞きたいか（仮説）。UIで「AIがこれを聞きたい理由」として表示
+  evidence jsonb,                -- 根拠となったinputs/nodesのID群。{"node_keys": [...]}
+  status text not null default 'open' check (status in ('open','asked','answered','dismissed')),
+  priority int default 5,
+  created_at timestamptz default now()
+);
+
+-- 移行: 既存の universes.pending_question を questions に 'asked' として取り込む。
+-- 以後 pending_question は読みも書きもしない（カラム自体は残す。削除はフェーズ3のスキーマ整理で検討）
+insert into questions (universe_id, question, status)
+select id, pending_question, 'asked'
+from universes
+where pending_question is not null
+  and not exists (
+    select 1 from questions q where q.universe_id = universes.id and q.question = universes.pending_question
+  );
