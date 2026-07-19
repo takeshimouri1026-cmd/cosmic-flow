@@ -1,3 +1,4 @@
+import { supabase } from "./supabaseClient";
 import type {
   Cluster,
   EdgeKind,
@@ -11,17 +12,19 @@ import type {
   Universe,
 } from "./types";
 
-const APP_SECRET = import.meta.env.VITE_APP_SHARED_SECRET as string | undefined;
-
-function headers(extra?: Record<string, string>): Record<string, string> {
+async function headers(extra?: Record<string, string>): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
   return {
-    ...(APP_SECRET ? { "x-app-secret": APP_SECRET } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...extra,
   };
 }
 
 async function asJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
+    // セッション切れ（401）はサインアウトしてAuthGateのログイン画面に戻す（§15.5）
+    if (res.status === 401) await supabase.auth.signOut();
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? `HTTP ${res.status}`);
   }
@@ -29,20 +32,20 @@ async function asJson<T>(res: Response): Promise<T> {
 }
 
 export async function fetchDefaultUniverse(): Promise<Universe> {
-  const res = await fetch("/api/default-universe", { headers: headers() });
+  const res = await fetch("/api/default-universe", { headers: await headers() });
   const data = await asJson<{ universe: Universe }>(res);
   return data.universe;
 }
 
 export async function fetchGraph(universeId: string): Promise<GraphState> {
-  const res = await fetch(`/api/universe/${universeId}/graph`, { headers: headers() });
+  const res = await fetch(`/api/universe/${universeId}/graph`, { headers: await headers() });
   return asJson<GraphState>(res);
 }
 
 export async function createCluster(universeId: string, label: string, color: string): Promise<{ cluster: Cluster }> {
   const res = await fetch(`/api/universe/${universeId}/clusters`, {
     method: "POST",
-    headers: headers({ "Content-Type": "application/json" }),
+    headers: await headers({ "Content-Type": "application/json" }),
     body: JSON.stringify({ label, color }),
   });
   return asJson(res);
@@ -51,26 +54,26 @@ export async function createCluster(universeId: string, label: string, color: st
 export async function renameCluster(universeId: string, key: string, label: string): Promise<{ cluster: Cluster }> {
   const res = await fetch(`/api/universe/${universeId}/clusters/${key}`, {
     method: "PATCH",
-    headers: headers({ "Content-Type": "application/json" }),
+    headers: await headers({ "Content-Type": "application/json" }),
     body: JSON.stringify({ label }),
   });
   return asJson(res);
 }
 
 export async function confirmNode(nodeId: string) {
-  const res = await fetch(`/api/nodes/${nodeId}/confirm`, { method: "POST", headers: headers() });
+  const res = await fetch(`/api/nodes/${nodeId}/confirm`, { method: "POST", headers: await headers() });
   return asJson(res);
 }
 
 export async function rejectNode(nodeId: string) {
-  const res = await fetch(`/api/nodes/${nodeId}/reject`, { method: "POST", headers: headers() });
+  const res = await fetch(`/api/nodes/${nodeId}/reject`, { method: "POST", headers: await headers() });
   return asJson(res);
 }
 
 export async function patchNode(nodeId: string, patch: { label?: string; description?: string }) {
   const res = await fetch(`/api/nodes/${nodeId}`, {
     method: "PATCH",
-    headers: headers({ "Content-Type": "application/json" }),
+    headers: await headers({ "Content-Type": "application/json" }),
     body: JSON.stringify(patch),
   });
   return asJson(res);
@@ -85,7 +88,7 @@ export async function createEdge(
 ) {
   const res = await fetch(`/api/edges`, {
     method: "POST",
-    headers: headers({ "Content-Type": "application/json" }),
+    headers: await headers({ "Content-Type": "application/json" }),
     body: JSON.stringify({
       universe_id: universeId,
       source_key: sourceKey,
@@ -98,7 +101,7 @@ export async function createEdge(
 }
 
 export async function deleteEdge(edgeId: string) {
-  const res = await fetch(`/api/edges/${edgeId}`, { method: "DELETE", headers: headers() });
+  const res = await fetch(`/api/edges/${edgeId}`, { method: "DELETE", headers: await headers() });
   return asJson(res);
 }
 
@@ -106,7 +109,7 @@ export async function deleteEdge(edgeId: string) {
 export async function patchEdge(edgeId: string, patch: { kind?: EdgeKind; reverse?: boolean; reinforce?: boolean }) {
   const res = await fetch(`/api/edges/${edgeId}`, {
     method: "PATCH",
-    headers: headers({ "Content-Type": "application/json" }),
+    headers: await headers({ "Content-Type": "application/json" }),
     body: JSON.stringify(patch),
   });
   return asJson(res);
@@ -116,7 +119,7 @@ export async function patchEdge(edgeId: string, patch: { kind?: EdgeKind; revers
 export async function narratePath(universeId: string, path: ExpeditionStep[]): Promise<{ narration: string }> {
   const res = await fetch(`/api/universe/${universeId}/narrate-path`, {
     method: "POST",
-    headers: headers({ "Content-Type": "application/json" }),
+    headers: await headers({ "Content-Type": "application/json" }),
     body: JSON.stringify({ path }),
   });
   return asJson(res);
@@ -130,7 +133,7 @@ export async function saveExpedition(
 ): Promise<{ expedition: Expedition }> {
   const res = await fetch(`/api/universe/${universeId}/expeditions`, {
     method: "POST",
-    headers: headers({ "Content-Type": "application/json" }),
+    headers: await headers({ "Content-Type": "application/json" }),
     body: JSON.stringify({ path, narration }),
   });
   return asJson(res);
@@ -149,7 +152,7 @@ export async function streamAction(
 ): Promise<void> {
   const res = await fetch(`/api/universe/${universeId}/interview`, {
     method: "POST",
-    headers: headers({ "Content-Type": "application/json" }),
+    headers: await headers({ "Content-Type": "application/json" }),
     body: JSON.stringify({ action }),
   });
   await consumeSse(res, onEvent);
@@ -164,7 +167,7 @@ export async function streamInterview(
 ): Promise<void> {
   const res = await fetch(`/api/universe/${universeId}/interview`, {
     method: "POST",
-    headers: headers({ "Content-Type": "application/json" }),
+    headers: await headers({ "Content-Type": "application/json" }),
     body: JSON.stringify({ text, question_id: questionId ?? undefined }),
     signal,
   });
@@ -173,14 +176,14 @@ export async function streamInterview(
 
 // 質問の泉（§14.4）
 export async function fetchQuestions(universeId: string, all = false): Promise<{ questions: Question[] }> {
-  const res = await fetch(`/api/universe/${universeId}/questions${all ? "?all=1" : ""}`, { headers: headers() });
+  const res = await fetch(`/api/universe/${universeId}/questions${all ? "?all=1" : ""}`, { headers: await headers() });
   return asJson(res);
 }
 
 export async function patchQuestion(questionId: string, status: QuestionStatus): Promise<{ question: Question }> {
   const res = await fetch(`/api/questions/${questionId}`, {
     method: "PATCH",
-    headers: headers({ "Content-Type": "application/json" }),
+    headers: await headers({ "Content-Type": "application/json" }),
     body: JSON.stringify({ status }),
   });
   return asJson(res);
@@ -195,12 +198,13 @@ export async function fetchTranscript(
   if (opts?.before) params.set("before", opts.before);
   if (opts?.limit) params.set("limit", String(opts.limit));
   const qs = params.toString();
-  const res = await fetch(`/api/universe/${universeId}/transcript${qs ? `?${qs}` : ""}`, { headers: headers() });
+  const res = await fetch(`/api/universe/${universeId}/transcript${qs ? `?${qs}` : ""}`, { headers: await headers() });
   return asJson(res);
 }
 
 async function consumeSse(res: Response, onEvent: (event: InterviewEvent) => void): Promise<void> {
   if (!res.ok || !res.body) {
+    if (res.status === 401) await supabase.auth.signOut();
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? `HTTP ${res.status}`);
   }

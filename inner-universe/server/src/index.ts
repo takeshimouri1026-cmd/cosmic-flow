@@ -15,7 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import cors from "cors";
 import express from "express";
-import { requireAppSecret } from "./auth.js";
+import { requireUser } from "./auth.js";
 import { supabase } from "./db.js";
 import { edgeRouter, nodeRouter, questionRouter, universeRouter } from "./routes/universe.js";
 
@@ -27,11 +27,12 @@ app.use(express.json({ limit: "1mb" }));
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
-// フェーズ1はシングルユーザー前提。最初に作られた universe を「自分の宇宙」として返す
-app.get("/api/default-universe", requireAppSecret, async (_req, res) => {
+// ログイン中ユーザーが所有する universe を「自分の宇宙」として返す（フェーズ2.5a・§15.4）
+app.get("/api/default-universe", requireUser, async (req, res) => {
   const { data, error } = await supabase
     .from("universes")
     .select("*")
+    .eq("owner_id", req.userId)
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -40,16 +41,16 @@ app.get("/api/default-universe", requireAppSecret, async (_req, res) => {
     return;
   }
   if (!data) {
-    res.status(404).json({ error: "universe がまだありません。scripts/seed.ts を実行してください" });
+    res.status(404).json({ error: "宇宙がまだありません" });
     return;
   }
   res.json({ universe: data });
 });
 
-app.use("/api/universe", requireAppSecret, universeRouter);
-app.use("/api/nodes", requireAppSecret, nodeRouter);
-app.use("/api/edges", requireAppSecret, edgeRouter);
-app.use("/api/questions", requireAppSecret, questionRouter);
+app.use("/api/universe", requireUser, universeRouter);
+app.use("/api/nodes", requireUser, nodeRouter);
+app.use("/api/edges", requireUser, edgeRouter);
+app.use("/api/questions", requireUser, questionRouter);
 
 const clientDist = path.resolve(__dirname, "../../client/dist");
 app.use(express.static(clientDist));

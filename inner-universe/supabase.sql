@@ -108,3 +108,20 @@ where pending_question is not null
   and not exists (
     select 1 from questions q where q.universe_id = universes.id and q.question = universes.pending_question
   );
+
+-- フェーズ2.5a: ログイン化 第一段階（§15）
+-- オーナーのauth uidを、唯一のuniverseに紐付ける（<オーナーのauth uid>はSupabaseダッシュボードで
+-- 作成したオーナーアカウントのUUID。Authentication > Users で確認できる。README §3.9参照）
+-- update universes set owner_id = '<オーナーのauth uid>';
+
+-- クライアントにpublishable keyを置く以上、RLSを有効化しないと全テーブルがPostgREST経由で
+-- 誰でも読み書きできてしまう（§15.3）。ポリシーは1本も作らない
+-- （=anon/authenticatedからのPostgRESTアクセスは全拒否。サーバはservice keyでRLSを素通りする）
+alter table universes enable row level security;
+alter table clusters enable row level security;
+alter table nodes enable row level security;
+alter table edges enable row level security;
+alter table messages enable row level security;
+alter table reports enable row level security;
+alter table expeditions enable row level security;
+alter table questions enable row level security;

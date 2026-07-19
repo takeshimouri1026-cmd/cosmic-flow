@@ -9,6 +9,7 @@ import StarList from "./StarList";
 import ClusterManager from "./ClusterManager";
 import QuestionSpring from "./QuestionSpring";
 import TranscriptView from "./TranscriptView";
+import { supabase } from "./supabaseClient";
 import { connectionsOf } from "./connections";
 import {
   confirmNode,
@@ -589,6 +590,9 @@ export default function App() {
             </button>
             <button className="lens" onClick={() => setTranscriptOpen(true)}>
               📜 航跡
+            </button>
+            <button className="lens" onClick={() => supabase.auth.signOut()}>
+              ログアウト
             </button>
           </div>
         </div>

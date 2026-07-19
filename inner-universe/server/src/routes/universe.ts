@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
 import { anthropic } from "../anthropicClient.js";
+import { assertUniverseOwner, requireEntityUniverseOwner, requireUniverseOwner } from "../auth.js";
 import { supabase } from "../db.js";
 import { buildPathText, findEdgeByPair, getGraph, getQuestions, getUniverse } from "../graph.js";
 import { runInterviewTurn } from "../interviewEngine.js";
@@ -16,6 +17,9 @@ const EDGE_KIND_LABEL: Record<string, string> = {
 };
 
 export const universeRouter = Router();
+
+// 全ルートが /:id/... の形なので、prefixミドルウェアで一括して所有権チェックする（§15.4、例外なし）
+universeRouter.use("/:id", requireUniverseOwner);
 
 // 同時1リクエストの連打防止（インタビューエンドポイントのみ）
 const interviewLocks = new Set<string>();
@@ -238,6 +242,9 @@ universeRouter.post("/:id/expeditions", async (req, res) => {
 
 export const nodeRouter = Router();
 
+// 全ルートが /:id/... の形なので、prefixミドルウェアで一括して所有権チェックする（§15.4、例外なし）
+nodeRouter.use("/:id", requireEntityUniverseOwner("nodes"));
+
 // 星の言葉を直す（手入れモード§13.2）。即時反映、user_edited=trueにしAIの上書きを禁じる
 nodeRouter.patch("/:id", async (req, res) => {
   const label = typeof req.body?.label === "string" ? req.body.label.trim() : undefined;
@@ -302,6 +309,9 @@ nodeRouter.post("/:id/reject", async (req, res) => {
 
 export const edgeRouter = Router();
 
+// PATCH/DELETE /:id は既存エッジのidなので、universe_idを引いてから所有権チェックする（§15.4）
+edgeRouter.use("/:id", requireEntityUniverseOwner("edges"));
+
 // 糸を張る（手入れモード§13.2）。即時反映。説明はユーザーの一言そのまま
 edgeRouter.post("/", async (req, res) => {
   const universeId = String(req.body?.universe_id ?? "");
@@ -310,6 +320,11 @@ edgeRouter.post("/", async (req, res) => {
   const description = String(req.body?.description ?? "").trim();
   if (!universeId || !sourceKey || !targetKey || !description) {
     res.status(400).json({ error: "universe_id, source_key, target_key, description が必要です" });
+    return;
+  }
+  // body由来のuniverse_idはクライアントが自由に指定できるため、ここで所有権チェックする（§15.4）
+  if (!(await assertUniverseOwner(req.userId!, universeId))) {
+    res.status(404).json({ error: "not found" });
     return;
   }
   const kind = typeof req.body?.kind === "string" ? req.body.kind : "influence";
@@ -429,6 +444,9 @@ edgeRouter.patch("/:id", async (req, res) => {
 });
 
 export const questionRouter = Router();
+
+// PATCH /:id は既存questionのidなので、universe_idを引いてから所有権チェックする（§15.4）
+questionRouter.use("/:id", requireEntityUniverseOwner("questions"));
 
 // 質問の泉（§14.1・§14.3）: statusの変更のみ。「消す」より「暗くする」。LLMには流さない直接更新
 questionRouter.patch("/:id", async (req, res) => {
