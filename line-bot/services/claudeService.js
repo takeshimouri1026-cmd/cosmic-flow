@@ -257,10 +257,14 @@ const SCHEDULE_SPEC = `
 ー外泊＠名古屋🏨
 
 例２:
+ースターツCAM様（13:00-18:00）＠名古屋
 ー夕飯ナシ
 ー前泊＠名古屋🏨
 
 【カレンダー色ごとのルール】
+※ バジル（読書ログ）やグラファイト（エレキギター練習等、レッスン以外）、その他の非対象色は
+  データの時点で除外済みなので、渡された予定は全て表示候補として扱ってよい。
+
 ■ グレープ（colorId:3）= 研修運営案件
   → 必ず全件表示。時間と場所（＠）を記載。
 
@@ -272,44 +276,69 @@ const SCHEDULE_SPEC = `
   → タイトルに🍺🥂🍻などの乾杯アイコンがある場合：「ー夕飯ナシ ○時 ○○と会食🍺」と表示（タイトルに名前・会食名があれば記載）
   → どちらもない場合：一人での食事のため表示しない
 
-■ バジル（colorId:10）= 読書ログ（例：「📖【読書】」で始まるタイトル）
-  → 必ず表示しない。例外なし。
-
-■ グラファイト（colorId:8）
-  → 表示しない。ただしタイトルが完全に「エレキギターレッスン」の場合のみ例外で表示（時間帯も記載）。
-    「エレキギター練習」など、レッスン以外のグラファイト色の予定は表示しない。
-
-■ その他の色（colorIdが上記以外）
-  → 表示しない
+■ グラファイト（colorId:8）でタイトルが「エレキギターレッスン」の予定
+  → 必ず表示。時間帯も記載。
 
 ■ 終日予定でタイトルに「本人×」が含まれる場合
   → その日はおとうの仕事予定が何も入らない日（フリーな日）を意味する。他の予定がなければ「予定なし」と表示。
+
+【夕飯・宿泊情報の並び順（最重要）】
+家族はこの2つの情報を「その日の最後の行」の同じ位置で確認する。だから、
+会議・研修などの通常予定を先に全て並べ終えたあと、その日の一番最後に
+①夕飯情報（該当する場合のみ）→②宿泊/外泊情報（該当する場合のみ）の順で必ずまとめて表示する。
+夕飯・宿泊情報を通常予定の途中や間に挟んではいけない。
 
 【宿泊・外泊のルール】
 - 外泊・前泊は必ずカレンダーに明示的な宿泊イベント（タイトルに「宿泊」「ホテル」「前泊」「後泊」等を含む、または複数日にまたがる終日イベント）がある場合のみ表示する。
 - 宿泊イベントが存在しない場合は絶対に「外泊」と表示しない。
 - 宿泊がある日の翌日にグレープ（colorId:3）の研修案件がある場合 → 「外泊」ではなく「前泊」と表示。
 - 宿泊場所はタイトルの「＠」以降または場所フィールドから取得して「＠●●🏨」の形式で記載。
-- 夕飯情報と宿泊情報は必ず別行に分けて表示。
+- 夕飯情報と宿泊情報は必ず別行に分ける（順番は上記【夕飯・宿泊情報の並び順】に従う）。
 
 【その他のルール】
 - タイトルに「＠」または「@」がある → ＠以降を場所として末尾に「＠●●」の形式で記載
 - 予定がない日 → 「予定なし」とだけ書く（余計な説明不要）
 - 絵文字は🍙🍺🏨程度に抑えて多種使いすぎない
-- 冒頭は「おっへや～！来週のおとうの予定だよ～！」
+- 冒頭は「おっへや～！{{WEEK_LABEL}}のおとうの予定だよ～！」
 - 締めは不要、予定を並べたら終わりでOK
 `;
 
+// 表示してよい予定だけを残す（バジル＝読書ログ、グラファイトのレッスン以外など
+// 「取ってこなくてよい」予定は、Claudeに渡す前にコード側で確実に除外する。
+// LLMのプロンプト解釈のブレに依存させないための決定的フィルタ。
+const LODGING_TITLE_RE = /(宿泊|ホテル|前泊|後泊)/;
+
+function isDisplayableEvent(ev) {
+  const colorId = ev.colorId;
+  const title = ev.summary ?? '';
+
+  if (colorId === '3') return true;  // グレープ：研修運営案件
+  if (colorId === '2') return true;  // セージ：対人・イベント案件
+  if (colorId === '11') return true; // トマト：食事の予定（表示可否の詳細判断はプロンプト側）
+  if (colorId === '8' && title.includes('エレキギターレッスン')) return true;
+  if (title.includes('本人×')) return true; // フリーな日マーカー
+  if (LODGING_TITLE_RE.test(title)) return true; // 宿泊イベント（色に依らず表示対象）
+
+  const isMultiDayAllDay = ev.start?.date && ev.end?.date &&
+    (new Date(ev.end.date) - new Date(ev.start.date) > 86400000);
+  if (isMultiDayAllDay) return true; // 複数日にまたがる終日イベント（宿泊の可能性）
+
+  return false; // バジル（読書ログ）や上記以外の色は表示しない
+}
+
 /**
- * カレンダーの予定から来週の家族向け共有メッセージを生成する
+ * カレンダーの予定から家族向け共有メッセージを生成する
  *
- * @param {object[]} events  - Google Calendar APIのイベント一覧
- * @param {Date} weekStart   - 来週の月曜日（UTC基準、JSTに変換して表示）
+ * @param {object[]} events    - Google Calendar APIのイベント一覧
+ * @param {Date} weekStart     - 対象週の月曜日（UTC基準、JSTに変換して表示）
+ * @param {string} weekLabel   - メッセージ冒頭に使う期間表現（例:「今週」「来週」「7/27週」）
  * @returns {string} おへやちゃんのメッセージ
  */
-export async function generateScheduleMessage(events, weekStart) {
+export async function generateScheduleMessage(events, weekStart, weekLabel = '来週') {
   const toJstTime = iso => new Date(new Date(iso).getTime() + 9 * 60 * 60 * 1000)
     .toISOString().substring(11, 16);
+
+  const displayableEvents = events.filter(isDisplayableEvent);
 
   // 日付ごとにイベントをグループ化（JST基準）
   const byDay = {};
@@ -320,7 +349,7 @@ export async function generateScheduleMessage(events, weekStart) {
     const key = jstD.toISOString().substring(0, 10);
     byDay[key] = { date: jstD, events: [] };
   }
-  for (const ev of events) {
+  for (const ev of displayableEvents) {
     const dateStr = (ev.start.dateTime ?? ev.start.date ?? '').substring(0, 10);
     if (byDay[dateStr]) byDay[dateStr].events.push(ev);
   }
@@ -352,14 +381,14 @@ export async function generateScheduleMessage(events, weekStart) {
       system: `あなたは「おへやちゃん」、毛利家の5歳児キャラAIです。口癖は「おっへや～」。ため口で素直に話す。`,
       messages: [{
         role: 'user',
-        content: `以下はおとう（威之）の来週のGoogleカレンダーの予定データです。
+        content: `以下はおとう（威之）の${weekLabel}のGoogleカレンダーの予定データです。
 各行の [color:X] はGoogleカレンダーのカラーIDです。
 
 ${eventsText}
 
 以下の仕様に従って、毛利家LINEグループ向けのメッセージに整形してください。
 
-${SCHEDULE_SPEC}`,
+${SCHEDULE_SPEC.replace('{{WEEK_LABEL}}', weekLabel)}`,
       }],
     });
 

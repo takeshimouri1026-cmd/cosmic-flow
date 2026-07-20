@@ -176,11 +176,12 @@ export async function processMessage(ctx) {
       try {
         const nowUtc = new Date();
         const nowJst = new Date(nowUtc.getTime() + 9 * 60 * 60 * 1000);
-        const targetJst = resolveScheduleWeekTarget(text, nowJst);
+        const { target: targetJst, type: weekType } = resolveScheduleWeekTarget(text, nowJst);
         const { events, weekStart } = await getWeekEvents(targetJst);
-        const response = await generateScheduleMessage(events, weekStart);
+        const weekLabel = scheduleWeekLabel(weekType, weekStart);
+        const response = await generateScheduleMessage(events, weekStart, weekLabel);
         await push(response);
-        logBot('（来週の予定を共有）');
+        logBot(`（${weekLabel}の予定を共有）`);
       } catch (err) {
         console.error('[Brain] カレンダーエラー:', err.message);
         await push(`おっへや～、カレンダーがうまく読めなかったよ～ごめんね！`);
@@ -343,14 +344,25 @@ function resolveScheduleWeekTarget(text, todayJst) {
     if (target.getTime() < todayJst.getTime() - 180 * 24 * 60 * 60 * 1000) {
       target.setUTCFullYear(year + 1);
     }
-    return target;
+    return { target, type: 'date' };
   }
   if (/今週/.test(text)) {
-    return todayJst;
+    return { target: todayJst, type: 'this' };
   }
   const target = new Date(todayJst);
   target.setUTCDate(todayJst.getUTCDate() + 7);
-  return target;
+  return { target, type: 'next' };
+}
+
+// おへやちゃんのメッセージ冒頭に使う期間表現を決める（実際に取得した週と表現が必ず一致するように）
+function scheduleWeekLabel(weekType, weekStart) {
+  if (weekType === 'this') return '今週';
+  if (weekType === 'next') return '来週';
+  // 日付指定のときは実際に取得した週の月曜日を明示する
+  const mondayJst = new Date(weekStart.getTime() + 9 * 60 * 60 * 1000);
+  const mm = mondayJst.getUTCMonth() + 1;
+  const dd = mondayJst.getUTCDate();
+  return `${mm}/${dd}週`;
 }
 
 function deleteMatchingPreference(person, description) {
