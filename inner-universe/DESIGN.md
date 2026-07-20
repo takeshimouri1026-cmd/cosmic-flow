@@ -22,7 +22,7 @@
 - フェーズ2a（§13手入れモード＋レンズ）・2a追補（§2.1糸の意味論=edges.kind）は実装・実API確認済み（2026-07-11。詳細はメモリ`project_inner_universe.md`）
 - **フェーズ2b（§12探索モード、12.1〜12.3・12.5）も実装・実API確認済み（2026-07-11）**。エッジ描画は曲線化済み（`buildEdgeCurve`、inner-cosmos/index.htmlの実装を移植）。§12.4（闇の穴・仮説ゴースト星）はフェーズ3のまま未着手。§10の`inputs`/`connectors`基盤は未着手のため、ふりかえりメモは`expeditions.path`のjsonb内に直接保存する形にした（inputsテーブルへの橋渡しは§10着手時の課題として先送り）
 - **フェーズ2c（§14: 質問の泉＋対話の航跡）も実装・実API確認済み（2026-07-19/20、検収基準§14.5の5点すべて確認）**。`pending_question`は本番universeでも`questions`テーブルへ移行済み。実装で発覚した罠: ツール5つ＋array型プロパティ＋全部`strict:true`の組み合わせで実APIが`400 Schema is too complex for compilation`を返す→`queue_question`のみ`strict:false`にしサーバ側で手動検証（`tools.ts`に注意コメントあり。**今後ツールを追加して400が出たらまずこれを疑う**）
-- **フェーズ2.5a（§15: ログイン化 第一段階）は設計済み・未実装（2026-07-20、v1.6）**。実装指示例は§16にあり
+- **フェーズ2.5a（§15: ログイン化 第一段階）は実装・実検収済み（2026-07-20、commit fe25fe0）**。検収基準§15.7の5点すべてを実Supabase Authで確認（未ログイン401・オーナーログインでインタビューSSE完走・別ユーザーは他人の宇宙にアクセス不可404・publishable keyのPostgREST直叩きはRLSで0行・`APP_SHARED_SECRET`参照ゼロ）。owner_id設定・サインアップ無効化・全8テーブルRLS有効化（ポリシー0本）はSupabaseダッシュボードで実施済み。**Render本番の環境変数は未反映の可能性が高い**（`APP_SHARED_SECRET`/`VITE_APP_SHARED_SECRET`を削除し`VITE_SUPABASE_URL`/`VITE_SUPABASE_PUBLISHABLE_KEY`を追加して再ビルドが必要。README §3.9参照）。2.5b（他ユーザー開放）設計時はGoogleログイン対応（Cosmic Flow同様のGoogle＋メール/パスワード両対応）の要望あり
 
 ## 0. コンセプト
 

@@ -33,7 +33,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     return (
       <div className="auth-screen">
         <form className="auth-card" onSubmit={handleSubmit}>
-          <h1>内的宇宙</h1>
+          <h1>Inner Universe</h1>
           <input
             type="email"
             placeholder="メールアドレス"
