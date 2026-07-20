@@ -1,6 +1,6 @@
 /**
  * services/calendarService.js
- * Google Calendar APIで来週の予定を取得する
+ * Google Calendar APIで指定週の予定を取得する
  */
 
 import { google } from 'googleapis';
@@ -17,43 +17,40 @@ function getAuth() {
 }
 
 /**
- * 来週（月〜日）の予定を取得する
+ * 指定日を含む週（月〜日）の予定を取得する
+ * @param {Date} targetJst - JST基準の対象日（getUTCDay/getUTCDateをJSTの曜日・日付として読む形。brain.jsのresolveScheduleWeekTarget参照）
  * @returns {{ events: object[], weekStart: Date, weekEnd: Date }}
  */
-export async function getNextWeekEvents() {
+export async function getWeekEvents(targetJst) {
   const auth = getAuth();
   const calendar = google.calendar({ version: 'v3', auth });
 
-  // JSTで現在日時を計算（Railway はUTCなので+9時間）
-  const nowUtc = new Date();
-  const now = new Date(nowUtc.getTime() + 9 * 60 * 60 * 1000);
+  const dayOfWeek = targetJst.getUTCDay(); // JSTの曜日（0=日,1=月,...）
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
 
-  const dayOfWeek = now.getUTCDay(); // JSTの曜日
-  const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
-
-  const nextMondayJst = new Date(now);
-  nextMondayJst.setUTCDate(now.getUTCDate() + daysUntilMonday);
-  nextMondayJst.setUTCHours(0, 0, 0, 0);
+  const mondayJst = new Date(targetJst);
+  mondayJst.setUTCDate(targetJst.getUTCDate() + diffToMonday);
+  mondayJst.setUTCHours(0, 0, 0, 0);
 
   // UTCに戻してAPIに渡す
-  const nextMonday = new Date(nextMondayJst.getTime() - 9 * 60 * 60 * 1000);
+  const monday = new Date(mondayJst.getTime() - 9 * 60 * 60 * 1000);
 
-  const nextSunday = new Date(nextMonday);
-  nextSunday.setDate(nextMonday.getDate() + 6);
-  nextSunday.setHours(nextSunday.getHours() + 23);
-  nextSunday.setMinutes(59, 59, 999);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(sunday.getHours() + 23);
+  sunday.setMinutes(59, 59, 999);
 
   const res = await calendar.events.list({
     calendarId: 'primary',
-    timeMin: nextMonday.toISOString(),
-    timeMax: nextSunday.toISOString(),
+    timeMin: monday.toISOString(),
+    timeMax: sunday.toISOString(),
     singleEvents: true,
     orderBy: 'startTime',
   });
 
   return {
     events: res.data.items ?? [],
-    weekStart: nextMonday,
-    weekEnd: nextSunday,
+    weekStart: monday,
+    weekEnd: sunday,
   };
 }

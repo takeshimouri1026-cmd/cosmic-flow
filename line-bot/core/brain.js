@@ -20,7 +20,7 @@
 import db from '../db/index.js';
 import { analyzeMessage, generateMemoryView, generateSearchResponse, generateScheduleMessage, generateReply, interpretProposalReply } from '../services/claudeService.js';
 import { search } from '../services/searchService.js';
-import { getNextWeekEvents } from '../services/calendarService.js';
+import { getWeekEvents } from '../services/calendarService.js';
 import { runReflection } from './reflection.js';
 
 // 内部キー名 → 表示名（日本語）
@@ -174,7 +174,10 @@ export async function processMessage(ctx) {
     logBot('カレンダー見てくるね、ちょっと待って！');
     (async () => {
       try {
-        const { events, weekStart } = await getNextWeekEvents();
+        const nowUtc = new Date();
+        const nowJst = new Date(nowUtc.getTime() + 9 * 60 * 60 * 1000);
+        const targetJst = resolveScheduleWeekTarget(text, nowJst);
+        const { events, weekStart } = await getWeekEvents(targetJst);
         const response = await generateScheduleMessage(events, weekStart);
         await push(response);
         logBot('（来週の予定を共有）');
@@ -325,6 +328,29 @@ function looksLikeScheduleRequest(text) {
   const hasSchedule = /(予定|スケジュール|よてい|スケジュ)/.test(text);
   const hasRequest  = /(共有|教え|おしえ|見せ|みせ|出し|だし|送っ|おくっ|ちょうだい|まとめ|お願い|おねがい|頼|ある\?|ある？|どう\?|どう？|チェック|確認)/.test(text);
   return hasSchedule && hasRequest;
+}
+
+// 予定共有の対象週を判定する（「今週」「来週」「M/D」のいずれかの表現から、その週の月曜(JST基準の疑似UTC)を含む日を返す）
+// 指定なし・「来週」明示のときは来週（従来のデフォルト挙動）、「今週」明示のときのみ今週を返す
+function resolveScheduleWeekTarget(text, todayJst) {
+  const dateMatch = text.match(/(\d{1,2})[\/月](\d{1,2})日?/);
+  if (dateMatch) {
+    const month = parseInt(dateMatch[1], 10);
+    const day = parseInt(dateMatch[2], 10);
+    const year = todayJst.getUTCFullYear();
+    const target = new Date(Date.UTC(year, month - 1, day));
+    // 半年以上前の日付になる場合は年をまたいだ指定とみなし翌年扱いにする
+    if (target.getTime() < todayJst.getTime() - 180 * 24 * 60 * 60 * 1000) {
+      target.setUTCFullYear(year + 1);
+    }
+    return target;
+  }
+  if (/今週/.test(text)) {
+    return todayJst;
+  }
+  const target = new Date(todayJst);
+  target.setUTCDate(todayJst.getUTCDate() + 7);
+  return target;
 }
 
 function deleteMatchingPreference(person, description) {
