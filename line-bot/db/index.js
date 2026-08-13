@@ -87,6 +87,7 @@ db.exec(`
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     note        TEXT NOT NULL,   -- 提案するふるまいの指針
     rationale   TEXT,            -- なぜそう提案するのか（振り返りの根拠）
+    conversation_key TEXT,       -- 提案を送った会話（ここでの返信だけを承認と見なす）
     status      TEXT NOT NULL DEFAULT 'pending'
                 CHECK(status IN ('pending', 'approved', 'rejected')),
     created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
@@ -99,6 +100,18 @@ db.exec(`
     value TEXT
   );
 `);
+
+// ============================================================
+// マイグレーション（既存DBに後から足した列を補う。何度実行しても安全）
+// ============================================================
+function addColumnIfMissing(table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (cols.some(c => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  console.log(`[DB] マイグレーション: ${table}.${column} を追加`);
+}
+
+addColumnIfMissing('behavior_proposals', 'conversation_key', 'TEXT');
 
 console.log('[DB] SQLite接続OK →', DB_PATH);
 

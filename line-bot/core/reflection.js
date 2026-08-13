@@ -26,9 +26,11 @@ function setMeta(key, value) {
  * 振り返りを実行する
  * @param {object} opts
  * @param {boolean} opts.manual - 手動トリガー（「ふりかえって」）かどうか
+ * @param {string}  opts.conversationKey - 提案を送る会話キー。手動時は呼び出し元の会話。
+ *   自動時はもうりのDM。ここに保存した会話でのみ承認返信を受け付ける（グループへの漏れ防止）
  * @returns {string|null} もうりに送ったメッセージ（手動時に返答へ使う）。提案なしならお知らせ文
  */
-export async function runReflection({ manual = false } = {}) {
+export async function runReflection({ manual = false, conversationKey = null } = {}) {
   const lastAt = getMeta('last_reflection_at');
 
   // 前回以降（初回は直近200件）のログを集める
@@ -66,11 +68,16 @@ export async function runReflection({ manual = false } = {}) {
   }
 
   // 提案を pending で保存
+  // conversation_key＝この提案への返信を受け付ける唯一の会話（＝提案を送った場所）。
+  // 手動なら呼び出し元の会話、自動ならもうりのDM。ここ以外での返信は承認と見なさない。
+  const takeyukiId = process.env.LINE_USER_TAKEYUKI;
+  const proposalKey = conversationKey ?? (takeyukiId ? `line:dm:${takeyukiId}` : null);
+
   const ids = [];
-  const insert = db.prepare(`INSERT INTO behavior_proposals (note, rationale) VALUES (?, ?)`);
+  const insert = db.prepare(`INSERT INTO behavior_proposals (note, rationale, conversation_key) VALUES (?, ?, ?)`);
   for (const p of proposals) {
     if (!p?.note) continue;
-    ids.push(insert.run(p.note, p.rationale ?? null).lastInsertRowid);
+    ids.push(insert.run(p.note, p.rationale ?? null, proposalKey).lastInsertRowid);
   }
 
   // もうりへの提案メッセージを組み立て
@@ -84,11 +91,10 @@ export async function runReflection({ manual = false } = {}) {
     `それでね、もっとみんなが心地よくなるように、こう変えてみてもいい？\n\n${lines}\n\n` +
     `「①OK」「全部OK」「②はいらない」みたいに教えて！`;
 
-  // 自動時はLINEでもうりに送る
+  // 自動時はLINEでもうりに送る（必ずDM。グループには絶対に流さない）
   if (!manual) {
-    const takeyuki = process.env.LINE_USER_TAKEYUKI;
-    if (takeyuki) {
-      try { await pushMessage(takeyuki, textMessage(message)); }
+    if (takeyukiId) {
+      try { await pushMessage(takeyukiId, textMessage(message)); }
       catch (err) { console.error('[Reflection] もうりへの通知失敗:', err.message); }
     }
   }

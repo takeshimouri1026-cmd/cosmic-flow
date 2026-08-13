@@ -78,9 +78,22 @@ export async function processMessage(ctx) {
   };
   const markDone = () => db.prepare('UPDATE raw_logs SET processed = 1 WHERE id = ?').run(logRow.lastInsertRowid);
 
-  // --- ★ 自己改善：pending提案への承認/却下返信を処理（家族のみ） ---
-  if (isFamily) {
-    const pending = db.prepare(`SELECT id, note FROM behavior_proposals WHERE status = 'pending' ORDER BY id ASC`).all();
+  // --- ★ 自己改善：pending提案への承認/却下返信を処理 ---
+  // 【重要／事故対策】提案を送った会話（＝もうりのDM）での、もうり本人の返信だけを承認と見なす。
+  // 以前はここが「家族の誰の、どの会話での発言でも」判定対象だったため、
+  // 家族グループでの「ありがとう！」「へいー」を承認返信と誤認し、
+  // 承認確認メッセージ（約束の全文入り）をグループに投下してしまう事故が起きていた。
+  // 承認のやりとりは家族の会話の場に一切出さない。
+  const isProposalChannel = person === 'takeyuki' && !conversationKey.includes(':group:');
+  if (isProposalChannel) {
+    // 3日以上前の提案は流れたものとして扱う（古い提案が偶然の相づちを拾わないように）
+    const pending = db.prepare(`
+      SELECT id, note FROM behavior_proposals
+      WHERE status = 'pending'
+        AND (conversation_key IS NULL OR conversation_key = ?)
+        AND created_at > datetime('now','localtime','-3 days')
+      ORDER BY id ASC
+    `).all(conversationKey);
     if (pending.length > 0) {
       const verdict = await interpretProposalReply(text, pending);
       if (verdict?.responding) {
@@ -98,8 +111,12 @@ export async function processMessage(ctx) {
           if (!p) continue;
           db.prepare(`UPDATE behavior_proposals SET status='rejected', updated_at=datetime('now','localtime') WHERE id=?`).run(p.id);
         }
+        // 約束の全文は復唱しない（読み上げると宣言っぽくなって気持ち悪い＆長い）。
+        // 約束は口に出すものではなく、次からのふるまいで示すもの。
         const msg = approvedNotes.length
-          ? `おっへや～！わかった、「${approvedNotes.join('」「')}」を心がけるね。ありがとう！`
+          ? (approvedNotes.length === 1
+              ? `おっへや～、わかった。そうするね。ありがとう！`
+              : `おっへや～、わかった。${approvedNotes.length}つとも、そうするね。ありがとう！`)
           : `おっへや～、わかった！今回は今のままでいくね。`;
         await reply(msg);
         logBot(msg);
@@ -134,6 +151,15 @@ export async function processMessage(ctx) {
 
   // 会話に参加中か（直近4発言以内におへや自身の発言がある＝やりとりが続いている）
   const engaged = recentMessages.slice(-4).some(m => m.speaker === 'おへや');
+
+  // 送信直前の最終チェック：約束の読み上げ・自分のふるまいの宣言を家族の場に出さない。
+  // 約束は口に出すものではなく、次からのふるまいで示すもの。
+  // プロンプトの努力目標だけに頼らず、コード側で確実に止める。
+  const guardReply = (replyText, fallback = null) => {
+    if (!looksLikeNoteRecitation(replyText, behaviorNotes)) return replyText;
+    console.log('[Brain] ⚠ 約束の復唱／ふるまいの宣言を検出 → 差し替え:', replyText?.slice(0, 40));
+    return fallback;
+  };
 
   // --- ③ Claude分析 ---
   const analysis = await analyzeMessage({ senderName, person, text, existingPrefs, recentMessages, behaviorNotes, engaged });
@@ -236,29 +262,73 @@ export async function processMessage(ctx) {
         `).run(analysis.behavior_note, text, person);
         console.log(`[DB] 行動メモ保存 id=${result.lastInsertRowid}: ${analysis.behavior_note}`);
       }
-      // メタ認知した返答をSonnetで生成（指摘を踏まえて自分の言葉で）
-      const replyText = await generateReply(
-        { senderName, person, text, recentMessages, behaviorNotes, existingPrefs },
-        isFamily
-          ? `${senderName}から自分のふるまいについて指摘・お願いを受けた。空返事せず、なぜそう言われたか自分の言葉で意味づけして、次からこうすると伝える。守ると決めた指針:「${analysis.behavior_note}」`
-          : `自分のふるまいについて軽く言われた。素直に受け止めて短く返す。`
+      // 指摘への返答は「短く受け止めるだけ」。
+      // 決めた指針を復唱・宣言すると、言われた側は説教されたような気持ちになるし、
+      // 会話の場に自分の内省を持ち込むことになる。わかったことは次のふるまいで示す。
+      const replyText = guardReply(
+        await generateReply(
+          { senderName, person, text, recentMessages, behaviorNotes, existingPrefs },
+          `${senderName}から自分のふるまいについて指摘・お願いを受けた。素直に受け止めて短く返すだけにする（1〜2文）。` +
+          `何をどう直すかの宣言・復唱はしない。「〜を心がけるね」「〜しないようにするね」のような言い方はしない。` +
+          `わかったことは次のふるまいで示せばいい。`
+        ),
+        `おっへや～、わかった。ありがとう。`
       );
-      await reply(replyText);
-      logBot(replyText);
+      if (replyText) { await reply(replyText); logBot(replyText); }
       markDone();
       return;
     }
 
-    // 手動で振り返り（家族のみ）
+    // 守っている約束の一覧を見せる（家族のみ）
+    // ためこんだ約束が古くなったり、言い回しが変だったりするのを家族が点検できるように。
+    if (analysis.intent === 'view_notes') {
+      if (!isFamily) {
+        const msg = `おっへや～、それはおうちの人と決めてることなんだ！`;
+        await reply(msg); logBot(msg); markDone(); return;
+      }
+      const notes = listActiveNotes();
+      const msg = notes.length
+        ? `おっへや～、いま気をつけてることだよ。\n\n` +
+          notes.map((n, i) => `${i + 1}. ${n.note}`).join('\n') +
+          `\n\nいらないのがあったら「${notes.length}番はもういいよ」って言ってね。`
+        : `おっへや～、いまは特に決めごとはないよ！`;
+      await reply(msg);
+      logBot('（約束の一覧を見せた）');
+      markDone();
+      return;
+    }
+
+    // 約束を忘れる（家族のみ）。古い/ズレた約束を家族の手で下ろせるようにする
+    if (analysis.intent === 'forget_note') {
+      if (!isFamily) {
+        const msg = `おっへや～、それはおうちの人と決めてることなんだ！`;
+        await reply(msg); logBot(msg); markDone(); return;
+      }
+      const forgotten = forgetMatchingNote(text, analysis.forget_target_description);
+      const msg = forgotten
+        ? `おっへや～、わかった。それはもう忘れるね。`
+        : `おっへや～、どれのことかわかんなかった…「約束みせて」って言ってくれたら番号で教えるね！`;
+      await reply(msg);
+      logBot(msg);
+      markDone();
+      return;
+    }
+
+    // 手動で振り返り（もうりとのDMでのみ）
+    // ふりかえり＝自分のふるまいについてのメタな話。家族の会話の場には持ち込まない。
     if (analysis.intent === 'reflect_now') {
       if (!isFamily) {
         const msg = `おっへや～、それはおうちの人とやることなんだ！`;
         await reply(msg); logBot(msg); markDone(); return;
       }
+      if (!isProposalChannel) {
+        const msg = `おっへや～、ふりかえりはおとうとふたりの時に話すね！`;
+        await reply(msg); logBot(msg); markDone(); return;
+      }
       await reply(`おっへや～、ちょっと自分の会話ふりかえってみるね…！`);
       (async () => {
         try {
-          const out = await runReflection({ manual: true });
+          const out = await runReflection({ manual: true, conversationKey });
           if (out) { await push(out); logBot('（振り返りの提案）'); }
         } catch (err) {
           console.error('[Brain] reflect_now エラー:', err.message);
@@ -307,9 +377,11 @@ export async function processMessage(ctx) {
 
   // --- ⑦ 通常の返答（Sonnetで文脈を読んで生成 = 2段構えの2段目） ---
   if (analysis.should_respond) {
-    const replyText = await generateReply({ senderName, person, text, recentMessages, behaviorNotes, existingPrefs });
-    await reply(replyText);
-    logBot(replyText);
+    // 約束の読み上げになっていたら、言い直さず黙る（沈黙のほうが家族には心地いい）
+    const replyText = guardReply(
+      await generateReply({ senderName, person, text, recentMessages, behaviorNotes, existingPrefs })
+    );
+    if (replyText) { await reply(replyText); logBot(replyText); }
   }
   markDone();
 }
@@ -317,6 +389,77 @@ export async function processMessage(ctx) {
 // ============================================================
 // ユーティリティ
 // ============================================================
+
+// 「〜を心がけるね」のような、自分のこれからのふるまいを宣言する言い回し
+const SELF_DECLARATION_RE = /(心がけるね|心がけます|心がける。|気をつけるね|ようにするね|ようにします|しないようにする|割り込まないね|だまって見守る|静かに見守る)/;
+
+/**
+ * 返答が「約束の読み上げ／ふるまいの宣言」になっていないか判定する
+ *
+ * 家族がいちばん困っていたのがこれ。感情のやりとりの最中に、
+ * おへや自身の内省コメントや約束の全文が投下されると場が壊れる。
+ *
+ * @param {string} replyText        - これから送ろうとしている文
+ * @param {object[]} behaviorNotes  - 現在守っている約束 [{note}]
+ */
+function looksLikeNoteRecitation(replyText, behaviorNotes = []) {
+  if (!replyText) return false;
+
+  // ①「…」で囲まれた長い引用が、実際の約束文と重なっている＝約束の読み上げ
+  const quotes = replyText.match(/[「『][^「」『』]{12,}[」』]/g) ?? [];
+  for (const q of quotes) {
+    const head = q.slice(1, -1).slice(0, 12);
+    if (behaviorNotes.some(n => (n.note ?? '').includes(head))) return true;
+  }
+
+  // ② 引用がなくても、長々とした自己宣言はアウト
+  if (replyText.length >= 60 && SELF_DECLARATION_RE.test(replyText)) return true;
+
+  return false;
+}
+
+// 現在守っている約束（表示・番号指定の基準になる並び順。id昇順で安定させる）
+function listActiveNotes() {
+  return db.prepare(`
+    SELECT id, note FROM behavior_notes WHERE status = 'active' ORDER BY id ASC
+  `).all();
+}
+
+/**
+ * 約束をひとつ取り下げる（番号指定 or キーワード一致）
+ * @param {string} text        - 家族の発言そのもの（「3番はもういいよ」等の番号を拾う）
+ * @param {string} description - Claudeが抽出した「どの約束か」の説明
+ */
+function forgetMatchingNote(text, description) {
+  const notes = listActiveNotes();
+  if (notes.length === 0) return null;
+
+  // ①「3番」「③」のような番号指定を優先
+  const numMatch = text.match(/([0-9１-９])\s*(番|つめ|つ目|番目)/) ??
+                   text.match(/([①②③④⑤⑥⑦⑧⑨])/);
+  if (numMatch) {
+    const CIRCLED = '①②③④⑤⑥⑦⑧⑨';
+    const token = numMatch[1];
+    const idx = CIRCLED.includes(token)
+      ? CIRCLED.indexOf(token) + 1
+      : parseInt(token.replace(/[１-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)), 10);
+    const target = notes[idx - 1];
+    if (target) return deleteNote(target);
+  }
+
+  // ② キーワード一致（嗜好削除と同じ考え方）
+  const keywords = (description ?? '').replace(/[「」（）]/g, '').split(/[、。\s]+/).filter(k => k.length >= 2);
+  const matched = notes.find(n => keywords.some(kw => n.note.includes(kw)));
+  return matched ? deleteNote(matched) : null;
+}
+
+function deleteNote(note) {
+  db.prepare(`
+    UPDATE behavior_notes SET status = 'deleted', updated_at = datetime('now','localtime') WHERE id = ?
+  `).run(note.id);
+  console.log(`[DB] 約束を取り下げ id=${note.id}: ${note.note}`);
+  return note;
+}
 
 function upgradeConfidence(current) {
   if (current === 'low')    return 'medium';
