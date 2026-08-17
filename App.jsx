@@ -198,7 +198,11 @@ export default function App({ session }) {
     setLoading(true); setError("");
     try {
       const ws = weekStartOf(new Date());
-      const existing = readings.find((r) => r.week_start === ws);
+      // 生成前にDBの最新状態を確認する(別端末で既に生成済みの可能性があり、
+      // マウント時に読み込んだメモリ上のreadingsだけを信じると二重生成の元になる)
+      const { data: freshRow } = await supabase.from("readings").select("*")
+        .eq("user_id", userId).eq("week_start", ws).maybeSingle();
+      const existing = freshRow || readings.find((r) => r.week_start === ws);
 
       // 今週の章がすでにあり内容も保存済みなら、そのまま開く(API呼び出しなし)
       if (existing?.content) {
@@ -226,7 +230,6 @@ export default function App({ session }) {
       const j = await r.json();
       if (j.error) throw new Error(j.error);
       const chapter = existing ? existing.chapter : pastChapters.length + 1;
-      setAdvice({ ...j, chapter });
       // この章を物語として記録(次回の続きの材料になる)
       if (j.story_summary) {
         if (existing) {
@@ -236,13 +239,29 @@ export default function App({ session }) {
             summary: j.story_summary, content: j, week_start: ws,
           }).eq("id", existing.id);
         } else {
-          await supabase.from("readings").insert({
+          // upsertで同時生成による重複章を防ぐ(user_id+week_startにDB側でユニーク制約が必要。
+          // 制約が無い環境でも壊れないよう失敗時は通常のinsertにフォールバックする)
+          const { error: upsertErr } = await supabase.from("readings").upsert({
             user_id: userId, chapter,
             title: j.chapter_title || `第${chapter}章`,
             summary: j.story_summary, content: j, week_start: ws,
-          });
+          }, { onConflict: "user_id,week_start" });
+          if (upsertErr) {
+            await supabase.from("readings").insert({
+              user_id: userId, chapter,
+              title: j.chapter_title || `第${chapter}章`,
+              summary: j.story_summary, content: j, week_start: ws,
+            });
+          }
         }
+        // 保存結果を再取得して表示する。他端末と競合していた場合も、
+        // 両者が同じ(DBに残った方の)内容を表示するようになる
+        const { data: saved } = await supabase.from("readings").select("*")
+          .eq("user_id", userId).eq("week_start", ws).maybeSingle();
+        setAdvice(saved?.content ? { ...saved.content, chapter: saved.chapter } : { ...j, chapter });
         loadReadings();
+      } else {
+        setAdvice({ ...j, chapter });
       }
     } catch (e) {
       setError(e.message || "通信に失敗しました。");

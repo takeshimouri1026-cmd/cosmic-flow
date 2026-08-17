@@ -36,6 +36,22 @@ function extractJSON(text) {
   }
 }
 
+// 各項目(身体/感情/知性/直感)の週内の最高値/最低値を文章化する
+// (これをAIに渡さないと、実データに無い数値へ到達したかのように書いてしまうことがある)
+const AXES = [
+  { key: "physical", label: "身体" },
+  { key: "emotional", label: "感情" },
+  { key: "intellectual", label: "知性" },
+  { key: "intuition", label: "直感" },
+];
+function extremesBlock(week) {
+  return AXES.map(({ key, label }) => {
+    const max = week.reduce((a, b) => (b[key] > a[key] ? b : a));
+    const min = week.reduce((a, b) => (b[key] < a[key] ? b : a));
+    return `${label}: 最高${max[key]}(${max.label}${max.weekday}) / 最低${min[key]}(${min.label}${min.weekday})`;
+  }).join("\n");
+}
+
 // 今週のアドバイスを生成
 app.post("/api/advice", async (req, res) => {
   const { week, awakening, overall, name, natal, transit, sky, history } = req.body;
@@ -47,6 +63,8 @@ app.post("/api/advice", async (req, res) => {
         `${d.label}(${d.weekday}): 身体${d.physical} 感情${d.emotional} 知性${d.intellectual} 直感${d.intuition}`
     )
     .join("\n");
+
+  const extremes = extremesBlock(week);
 
   const natalBlock = natal
     ? `\n\n■ ${name || "相談者"}さんの出生図(ネイタル):\n${natal}\nこの星の配置(生まれ持った性質)も踏まえてください。`
@@ -68,12 +86,17 @@ ${name || "相談者"}さんの毎週のリーディングを「ひとつづき�
 
 ${summary}
 
+■ 各項目の今週の最高値・最低値(この範囲を超える表現をしないこと):
+${extremes}
+
 今週の総合エネルギー傾向: ${overall > 0 ? "上昇" : "内省"}
 覚醒スコア: ${awakening}/100${natalBlock}${transitBlock}${skyBlock}${historyBlock}
 
 これらを宇宙のエネルギーの流れとして総合的に解釈し、以下を日本語で答えてください。
 ただし占いを断定的な予言にせず、あくまで「こう過ごすと整いやすい」という提案にとどめてください。
-出力前に、挙げた日付とその数値の符号(プラス/マイナス)が本文の表現と矛盾していないか必ず見直してください。
+出力前に、以下の2点を必ず見直してください。
+1. 挙げた日付とその数値の符号(プラス/マイナス)が本文の表現と矛盾していないか(マイナス=低下・休息期を「絶好調」「絶頂」等と書いていないか)。
+2. 「絶頂」「谷底」「100に達する」「昇り詰める」のような極端な表現を使う箇所は、実際に上記の最高値・最低値がその水準に近いかを確認すること。実データに無い数値や推移(例:最高値が-90しかない項目を「100へ昇り詰める」と書く)を作り出さないこと。
 
 必ず次のJSON形式のみで出力してください(前後の説明やマークダウン不要):
 {
@@ -165,6 +188,9 @@ app.post("/api/analyze", async (req, res) => {
 
 ■ 今週のバイオリズム数値(-100〜100。プラスはその力が高まっている状態、マイナスは低下している状態(休息・内省期)を意味します):
 ${summary}
+
+■ 各項目の今週の最高値・最低値(この範囲を超える表現をしないこと):
+${extremesBlock(week)}
 今週の総合エネルギー傾向: ${overall > 0 ? "上昇" : "内省"}
 覚醒スコア: ${awakening}/100
 ${natalBlock}${transitBlock}${skyBlock}
