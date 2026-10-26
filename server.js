@@ -16,13 +16,6 @@ app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-{
-  const k = process.env.ANTHROPIC_API_KEY || "";
-  console.log("[DEBUG key] length:", k.length);
-  console.log("[DEBUG key] head codes:", [...k.slice(0, 6)].map((c) => c.charCodeAt(0)));
-  console.log("[DEBUG key] tail codes:", [...k.slice(-6)].map((c) => c.charCodeAt(0)));
-  console.log("[DEBUG key] has control chars:", /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(k));
-}
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 // 送信元。独自ドメイン未設定ならResendの共有ドメインを使う
 const MAIL_FROM = process.env.MAIL_FROM || "Cosmic Flow <onboarding@resend.dev>";
